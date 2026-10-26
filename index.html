@@ -102,6 +102,7 @@ button:active{transform:scale(.97)}
 <li><b>Xem nhanh:</b> bấm nút 👁 ở thẻ đơn, dòng chọn đơn hoặc chi tiết ngày để chỉ xem đơn (không hiện ô thu tiền, trả đồ hay sửa đơn). Muốn xử lý thì bấm “Xem chi tiết &amp; Xử lý”.</li>
 <li><b>Tải dữ liệu:</b> dữ liệu chỉ tải 1 lần rồi giữ ở máy trong phiên làm việc — chuyển tab không tải lại. Muốn lấy số mới nhất từ Sheet thì bấm nút “🔄 Làm mới” trên đầu trang (hoặc tải lại trang). Sau mỗi lần tạo/sửa/thu tiền/trả đồ, dữ liệu tự tải lại mới.</li>
 <li><b>Tất cả đơn:</b> danh sách đơn nằm ở tab riêng “📋 Tất cả đơn” — mở tab lần đầu mới tải, chuyển tab không tải lại (có cache), bấm “🔄 Làm mới” hoặc sau mỗi lần tạo/sửa/thu tiền/trả đồ thì tự tải mới.</li>
+<li><b>Tải ngầm lúc mở app:</b> vừa mở app là toàn bộ đơn (bao gồm cả tháng này) tải ngầm sẵn dưới nền — không hiện khung tải, không chặn bấm. Bấm xem chi tiết hay sửa đơn là hiện ngay, không phải chờ tải nữa.</li>
 <li><b>Đổi mẫu:</b> bấm nút ✕ ở cuối ô chọn mẫu để xoá mẫu đã chọn và chọn mẫu khác; ảnh mẫu hiện ngay trước tên mẫu trong danh sách, ảnh chiếc (ảnh của mẫu đó) hiện cạnh ô chọn chiếc.</li>
 <li><b>Bảng trên mobile:</b> bảng mẫu/chiếc hiện dạng thẻ có ảnh trên điện thoại, dạng bảng trên máy tính.</li>
 </ol>
@@ -354,28 +355,29 @@ button:active{transform:scale(.97)}
 let PRODS=[], ASSETS=[], ORDERS=[], CUSTS=[], LINES=[], EXPENSES=[];
 // CACHE client — chỉ trong bộ nhớ của trang (tải lại trang là hết, KHÔNG ghi localStorage để tránh dữ liệu cũ):
 // chuyển tab chỉ vẽ lại từ dữ liệu đã có, không gọi API. Chỉ tải lại khi: bấm 🔄 Làm mới, tải lại trang, hoặc sau khi sửa/xoá/thu tiền/trả đồ (lúc đó cache bị xoá).
-let CACHE={}, CACHE_TIME=0;
+let CACHE={}, CACHE_TIME=0, INFLIGHT={}, CACHE_GEN=0;
 function cacheKey(a,p){return a+'|'+JSON.stringify(p||{});}
-async function apiCached(a,p){const k=cacheKey(a,p);if(Object.prototype.hasOwnProperty.call(CACHE,k))return CACHE[k];const d=await api(a,p);CACHE[k]=d;CACHE_TIME=Date.now();updateCacheLabel();return d;}
-function clearCache(){CACHE={};CACHE_TIME=0;updateCacheLabel();}
+async function apiCached(a,p,opts){const k=cacheKey(a,p);if(Object.prototype.hasOwnProperty.call(CACHE,k))return CACHE[k];const g=CACHE_GEN;const infl=INFLIGHT[k];if(infl&&infl.g===g)return infl.pr;const pr=api(a,p,opts).then(d=>{if(CACHE_GEN===g){CACHE[k]=d;CACHE_TIME=Date.now();updateCacheLabel();}return d;}).finally(()=>{if(INFLIGHT[k]&&INFLIGHT[k].pr===pr)delete INFLIGHT[k];});INFLIGHT[k]={pr,g};return pr;}
+function clearCache(){CACHE={};CACHE_TIME=0;INFLIGHT={};CACHE_GEN++;updateCacheLabel();}
 function updateCacheLabel(){const el=document.getElementById('cacheLabel');if(el)el.textContent=CACHE_TIME?('Dữ liệu lúc '+new Date(CACHE_TIME).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})):'Chưa tải dữ liệu';}
 // Loading: chỉ hiện spinner khi gọi mạng thật kéo dài trên 250ms (tránh nhấp nháy); lần đọc từ cache không hiện gì.
 let LOADING_N=0, LOADING_T=null;
 function setLoading(on){if(on){LOADING_N++;if(!LOADING_T)LOADING_T=setTimeout(()=>{const el=document.getElementById('loader');if(el&&LOADING_N>0)el.style.display='flex';},250);}else{LOADING_N=Math.max(0,LOADING_N-1);if(LOADING_N===0){if(LOADING_T){clearTimeout(LOADING_T);LOADING_T=null;}const el=document.getElementById('loader');if(el)el.style.display='none';}}}
-async function refreshAll(){clearCache();try{const jobs=[loadStock(),loadCalendar(),loadDash()];if(ALLORDERS_LOADED)jobs.push(loadOrders());await Promise.all(jobs);}catch(e){}renderPayPick();renderRetPick();}
+let REFRESHING=false;
+async function refreshAll(){if(REFRESHING)return;REFRESHING=true;try{clearCache();try{const jobs=[loadStock(),loadCalendar(),loadDash()];if(ALLORDERS_LOADED)jobs.push(loadOrders());await Promise.all(jobs);}catch(e){}renderPayPick();renderRetPick();}finally{REFRESHING=false;}}
 let CUST_PAGE=1, ORDER_PAGE=1, ORDER_STATUS_FILTER='all', ORDER_CUST_FILTER='', OD_ID='';
 let ALLORDERS_LOADED=false;
 let CAL_MODE='month', CAL_CURSOR=new Date(), CAL_DATA=null, CAL_SELECTED=null;
 const fmt=n=>new Intl.NumberFormat('vi-VN').format(n||0)+'đ';
-async function api(action,payload){
+async function api(action,payload,opts){const silent=!!(opts&&opts.silent);
   // BẢN MỞ: không cần token, không cần login. Ưu tiên google.script.run khi mở
   // trực tiếp link Web App, còn lại gọi API_URL không kèm token.
-  setLoading(true);
+  if(!silent)setLoading(true);
   try{
     if(window.google&&google.script&&google.script.run){return await new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).callApi(action,payload||{}));}
     const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload:payload||{}})});
     const j=await r.json();if(!j.success)throw new Error(j.error);return j.data;
-  }finally{setLoading(false);}
+  }finally{if(!silent)setLoading(false);}
 }
 function showTab(tab){document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('nav-active'));document.querySelectorAll('.tabbtn[data-tab="'+tab+'"]').forEach(x=>x.classList.add('nav-active'));document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));document.getElementById('tab-'+tab).classList.remove('hidden');if(tab==='allorders'){if(!ALLORDERS_LOADED){ALLORDERS_LOADED=true;loadOrders();}else{renderOrders();}}window.scrollTo({top:0,behavior:'smooth'});
  if(tab==='stock')loadStock(); if(tab==='time')loadCalendar(); if(tab==='cust')loadCusts(); if(tab==='model')loadModels(); if(tab==='dash')loadDash(); if(tab==='expense')loadExpenses();}
@@ -437,7 +439,7 @@ function updateMoney(){let sub=0,depTot=0;document.querySelectorAll('.line').for
  const disc=Number(document.getElementById('discount').value||0),surch=Number(document.getElementById('surcharge').value||0);
  const total=sub-disc+surch;
  document.getElementById('moneyBox').innerHTML='💰 Tiền tạm tính: tiền thuê '+fmt(sub)+' − giảm '+fmt(disc)+' + phụ thu '+fmt(surch)+' = <b>'+fmt(total)+'</b> · Cọc yêu cầu tổng '+fmt(depTot)+' · (tiền thuê và cọc tự tính theo bảng giá mẫu + số ngày, nhập tay giá/cọc riêng sẽ ghi đè dòng đó).';}
-function refreshAssetOptions(el){const pid=el.querySelector('.prod').value;const sel=el.querySelector('.asset');const cur=sel.value;const list=pid?ASSETS.filter(a=>a.product_id===pid):[];sel.innerHTML='<option value="">Tự chọn chiếc trống</option>'+list.map(a=>`<option value="${a.asset_id}">${a.asset_id} — ${a.availability_status}</option>`).join('');if(list.some(a=>a.asset_id===cur))sel.value=cur;const th=el.querySelector('.assetThumb');if(th){const pp=PRODS.find(x=>x.product_id===pid);th.innerHTML=pp?prodThumb(pp,40):'';}}
+function refreshAssetOptions(el){const pid=el.querySelector('.prod').value;const sel=el.querySelector('.asset');const cur=sel.value;const list=pid?ASSETS.filter(a=>a.product_id===pid):[];sel.innerHTML='<option value="">'+(pid?'Tự chọn chiếc trống':'Chọn mẫu trước để thấy chiếc')+'</option>'+list.map(a=>`<option value="${a.asset_id}">${a.asset_id} — ${a.availability_status}</option>`).join('');if(list.some(a=>a.asset_id===cur))sel.value=cur;const th=el.querySelector('.assetThumb');if(th){const pp=PRODS.find(x=>x.product_id===pid);th.innerHTML=pp?prodThumb(pp,40):'';}}
 function removeLine(btn){btn.closest('.line').remove();updateMoney();}
 function renderProdList(el){const inp=el.querySelector('.prodSearch');const q=inp.value;const box=el.querySelector('.prodList');const pidEl=el.querySelector('.prod');if(pidEl.value){const pp=PRODS.find(x=>x.product_id===pidEl.value);if(!pp||inp.value!==pp.name+' ('+pp.product_id+')'){pidEl.value='';refreshAssetOptions(el);updateMoney();}}
  if(!PRODS.length){box.innerHTML='<div class="px-3 py-3 text-sm text-stone-500">Đang tải danh sách mẫu...</div>';box.classList.remove('hidden');loadStock().then(()=>renderProdList(el)).catch(()=>{box.innerHTML='<div class="px-3 py-3 text-sm text-stone-500">Chưa tải được mẫu — thử tải lại trang.</div>';});return;}
@@ -472,7 +474,8 @@ async function editOrder(orderId){
   const o=ORDERS.find(x=>x.order_id===orderId);if(!o)return alert('Không tìm thấy đơn.');
   if(o.status==='Hoàn tất'||o.status==='Đã hủy')return alert('Đơn đã hoàn tất / đã hủy thì không sửa nữa, để giữ lịch sử.');
   try{
-    const [lines,custs]=await Promise.all([apiCached('orderLines',{order_id:orderId}),apiCached('customers',{})]);
+    let lines=LINES.filter(l=>l.order_id===orderId);if(!lines.length)lines=await apiCached('orderLines',{order_id:orderId});
+    const custs=CUSTS.length?CUSTS:await apiCached('customers',{});
     const c=custs.find(x=>x.customer_id===o.customer_id)||{};
     document.getElementById('cName').value=c.full_name||'';document.getElementById('cPhone').value=c.phone||'';document.getElementById('cAddr').value=c.address||'';
     document.getElementById('pickup').value=String(o.pickup_at||'').replace(' ','T').slice(0,16);
@@ -504,7 +507,9 @@ function viewCustomerOrders(cid){const c=CUSTS.find(x=>x.customer_id===cid);ORDE
 function clearCustFilter(){ORDER_CUST_FILTER='';document.getElementById('orderCustChip').classList.add('hidden');renderOrders();}
 function goOverdue(){setOrderFilter('overdue');showTab('allorders');}
 function updateOverdueBadge(){const n=ORDERS.filter(o=>o.status==='Hết thời gian thuê').length;const b=document.getElementById('overdueBadge');if(b){b.textContent=n;b.classList.toggle('hidden',n===0);}}
-async function loadOrders(){try{const [os,cs,ls]=await Promise.all([apiCached('orders',{}),apiCached('customers',{}),apiCached('allLines',{})]);ORDERS=os;CUSTS=cs;LINES=ls;}catch(e){ORDERS=await apiCached('orders',{});}updateOverdueBadge();renderOrders();}
+async function fetchOrders(silent){const o=silent?{silent:true}:undefined;try{const [os,cs,ls]=await Promise.all([apiCached('orders',{},o),apiCached('customers',{},o),apiCached('allLines',{},o)]);ORDERS=os;CUSTS=cs;LINES=ls;}catch(e){ORDERS=await apiCached('orders',{},o);}updateOverdueBadge();}
+async function loadOrders(){await fetchOrders();renderOrders();}
+async function preloadOrders(){try{await fetchOrders(true);ALLORDERS_LOADED=true;}catch(e){}}
 function renderOrders(){const q=norm(document.getElementById('searchOrder')?document.getElementById('searchOrder').value:'');
  let rows=ORDERS.filter(o=>{if(ORDER_CUST_FILTER&&o.customer_id!==ORDER_CUST_FILTER)return false;if(ORDER_STATUS_FILTER==='pending'&&['Đã tạo đơn','Đã cọc'].indexOf(o.status)<0)return false;if(ORDER_STATUS_FILTER==='renting'&&o.status!=='Đã giao khách')return false;if(ORDER_STATUS_FILTER==='overdue'&&o.status!=='Hết thời gian thuê')return false;if(ORDER_STATUS_FILTER==='done'&&['Khách đã trả','Hoàn tất'].indexOf(o.status)<0)return false;if(!q)return true;const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};const lineTxt=LINES.filter(l=>l.order_id===o.order_id).map(l=>l.product_id+' '+l.asset_id).join(' ');return norm(o.order_id+' '+o.customer_id+' '+c.full_name+' '+c.phone+' '+lineTxt).includes(q);});
  const total=rows.length,totalPages=Math.max(1,Math.ceil(total/8));if(ORDER_PAGE>totalPages)ORDER_PAGE=totalPages;const pageRows=rows.slice((ORDER_PAGE-1)*8,ORDER_PAGE*8);
@@ -522,12 +527,12 @@ function renderOrders(){const q=norm(document.getElementById('searchOrder')?docu
  document.getElementById('orderPag').innerHTML=pagBar(ORDER_PAGE,totalPages,total,'hợp đồng','setOrderPage');}
 function askCancelOrder(id){const o=ORDERS.find(x=>x.order_id===id);if(!o)return;if(['Đã tạo đơn','Đã cọc'].indexOf(o.status)<0)return alert('Chỉ hủy được đơn mới tạo hoặc đã cọc.');document.getElementById('confirmText').textContent='Hủy đơn '+id+'? Đơn hủy vẫn giữ lại trong lịch sử, không xóa.';CONFIRM_CB=async()=>{try{await api('updateStatus',{order_id:id,status:'Đã hủy'});closeConfirmModal();clearCache();loadOrders();}catch(e){alert(e.message);}};document.getElementById('confirmModal').classList.remove('hidden');}
 let OD_LINES=[];
-async function openOrderDetail(id,viewOnly){OD_ID=id;const o=ORDERS.find(x=>x.order_id===id);if(!o){loadOrders().then(()=>openOrderDetail(id,viewOnly));return;}const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};try{OD_LINES=await apiCached('orderLines',{order_id:id});}catch(e){OD_LINES=LINES.filter(l=>l.order_id===id);}
+async function openOrderDetail(id,viewOnly){OD_ID=id;const o=ORDERS.find(x=>x.order_id===id);if(!o){loadOrders().then(()=>openOrderDetail(id,viewOnly));return;}const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};let _ls=LINES.filter(l=>l.order_id===id);if(!_ls.length){try{_ls=await apiCached('orderLines',{order_id:id});}catch(e){_ls=[];}}OD_LINES=_ls;
  const due=orderDue(o),depLeft=orderDepLeft(o);
  document.getElementById('odTitle').textContent=(viewOnly?'👁 Xem đơn ':'Đơn ')+id+' — '+(c.full_name||o.customer_id);
  document.getElementById('odBody').innerHTML=`<div class="flex gap-2 items-center">${statusPill(o.status)} <span>📅 ${shortDate(o.pickup_at)} → ${shortDate(o.due_at)} (${orderDays(o)} ngày)</span></div>
  <div>👤 ${c.full_name||''} · 📞 ${c.phone||''} · ${c.address||''}</div>
- <div>${OD_LINES.map(l=>{const p=PRODS.find(x=>x.product_id===l.product_id);return `<div class="bg-stone-50 rounded-lg px-3 py-2">👗 ${p?p.name:l.product_id} (${l.asset_id}) — ${l.rental_days} ngày — thuê ${fmt(l.rental_fee)} — cọc ${fmt(l.deposit_required)}</div>`;}).join('')||'—'}</div>
+ <div>${OD_LINES.map(l=>{const p=PRODS.find(x=>x.product_id===l.product_id);return `<div class="bg-stone-50 rounded-lg px-3 py-2 flex items-center gap-3">${prodThumb(p,48)}<span>${p?p.name:l.product_id} (${l.asset_id}) — ${l.rental_days} ngày — thuê ${fmt(l.rental_fee)} — cọc ${fmt(l.deposit_required)}</span></div>`;}).join('')||'—'}</div>
  <div class="bg-green-50 rounded-xl p-3 font-semibold">Tổng phải thu: ${fmt(Number(o.rental_subtotal||0)-Number(o.discount_amount||0)+Number(o.surcharge_amount||0)+Number(o.late_fee_amount||0)+Number(o.damage_fee||0))} · Đã thu thuê: ${fmt(o.rental_paid)} · Cọc nhận: ${fmt(o.deposit_received)} · Cọc còn giữ: ${fmt(depLeft)} · <span class="${due<=0&&depLeft===0?'text-green-700':'text-amber-700'}">${due<=0&&depLeft===0?'✓ Đủ tiền':'Còn thu '+fmt(Math.max(0,due))}</span></div>
  ${o.notes?`<div class="bg-amber-50 rounded-lg px-3 py-2 whitespace-pre-line">📝 Ghi chú:\n${o.notes}</div>`:''}
  ${viewOnly?'':`<div class="flex gap-2"><button onclick="closeOrderDetail();editOrder('${id}')" class="flex-1 border font-bold py-3 rounded-xl">✏️ Sửa đơn</button><button onclick="doStatus('${id}','Đã giao khách');closeOrderDetail()" class="flex-1 border font-bold py-3 rounded-xl">Giao</button><button onclick="doComplete('${id}');closeOrderDetail()" class="flex-1 border font-bold py-3 rounded-xl">Hoàn tất</button></div>`}`;
@@ -613,6 +618,6 @@ function setDateDefaults(){
 }
 async function seedTest(){try{document.getElementById('seedMsg').textContent='⏳ Đang nạp dữ liệu mẫu...';const r=await api('seedTest',{});document.getElementById('seedMsg').textContent='✅ '+r.message;clearCache();loadOrders();loadCalendar();loadStock();loadDash();}catch(e){document.getElementById('seedMsg').textContent='❌ '+e.message;}}
 async function seedDemo(){try{document.getElementById('demoMsg').textContent='⏳ Đang nạp demo...';const r=await api('seedDemo',{});document.getElementById('demoMsg').textContent='✅ '+r.message;clearCache();loadStock();loadCusts();loadCalendar();}catch(e){document.getElementById('demoMsg').textContent='❌ '+e.message;}}
-async function loadAll(){try{setDateDefaults();PRODS=await apiCached('products',{});ASSETS=await apiCached('assets',{});addLine();loadDash();clearCache();loadCalendar();}catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message;}}
+async function loadAll(){try{setDateDefaults();PRODS=await apiCached('products',{});ASSETS=await apiCached('assets',{});addLine();loadDash();clearCache();loadCalendar();preloadOrders();}catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message;}}
 document.getElementById('userName').textContent='Chủ tiệm';document.getElementById('userEmail').textContent='Chế độ mở — không cần đăng nhập';const _s=document.getElementById('userEmailSide');if(_s)_s.textContent='Chế độ mở';const _t=document.getElementById('userEmailTop');if(_t)_t.textContent='Chế độ mở — chỉ chủ tiệm giữ link';loadAll();
 </script></body></html>
