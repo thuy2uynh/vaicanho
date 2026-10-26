@@ -24,7 +24,7 @@ button:active{transform:scale(.97)}
 #orderCards>div,#custCards>div{transition:transform .18s ease,box-shadow .18s ease}
 #orderCards>div:hover,#custCards>div:hover{transform:translateY(-2px)}
 @keyframes spin{to{transform:rotate(360deg)}}
-#loader{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.25);display:flex;align-items:center;justify-content:center}
+#loader{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.25);display:none;align-items:center;justify-content:center}
 #loader .box{background:#fff;border-radius:16px;padding:20px 28px;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.25)}
 #loader .spin{width:36px;height:36px;border:4px solid #fed7aa;border-top-color:#ea580c;border-radius:50%;margin:0 auto 10px;animation:spin .8s linear infinite}
 </style></head>
@@ -351,7 +351,7 @@ function clearCache(){CACHE={};CACHE_TIME=0;updateCacheLabel();}
 function updateCacheLabel(){const el=document.getElementById('cacheLabel');if(el)el.textContent=CACHE_TIME?('Dữ liệu lúc '+new Date(CACHE_TIME).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})):'Chưa tải dữ liệu';}
 // Loading: chỉ hiện spinner khi gọi mạng thật kéo dài trên 250ms (tránh nhấp nháy); lần đọc từ cache không hiện gì.
 let LOADING_N=0, LOADING_T=null;
-function setLoading(on){if(on){LOADING_N++;if(!LOADING_T)LOADING_T=setTimeout(()=>{const el=document.getElementById('loader');if(el&&LOADING_N>0)el.classList.remove('hidden');},250);}else{LOADING_N=Math.max(0,LOADING_N-1);if(LOADING_N===0){if(LOADING_T){clearTimeout(LOADING_T);LOADING_T=null;}const el=document.getElementById('loader');if(el)el.classList.add('hidden');}}}
+function setLoading(on){if(on){LOADING_N++;if(!LOADING_T)LOADING_T=setTimeout(()=>{const el=document.getElementById('loader');if(el&&LOADING_N>0)el.style.display='flex';},250);}else{LOADING_N=Math.max(0,LOADING_N-1);if(LOADING_N===0){if(LOADING_T){clearTimeout(LOADING_T);LOADING_T=null;}const el=document.getElementById('loader');if(el)el.style.display='none';}}}
 async function refreshAll(){clearCache();try{await Promise.all([loadStock(),loadOrders(),loadCalendar(),loadDash()]);}catch(e){}renderPayPick();renderRetPick();}
 let CUST_PAGE=1, ORDER_PAGE=1, ORDER_STATUS_FILTER='all', ORDER_CUST_FILTER='', OD_ID='';
 let CAL_MODE='month', CAL_CURSOR=new Date(), CAL_DATA=null, CAL_SELECTED=null;
