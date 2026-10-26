@@ -1,0 +1,570 @@
+<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tiệm Thuê Đồ</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- BẢN MỞ: không GIS, không login — ai có link cũng vào dùng được, chỉ chủ tiệm giữ link -->
+<!-- BẢN BÀN GIAO: deploy Apps Script Anyone + login Google mới dùng được.
+     Điền API_URL = link Web App sau khi deploy bằng tài khoản chủ tiệm. -->
+<script>const API_URL = "https://script.google.com/macros/s/AKfycbx_wuKf0zty9IO6f5hpcaDA4DgjCT09cgk64V8j_YLOuOQYcumigln5riXdg7NrHyGdQQ/exec";</script>
+<style>
+body{font-family:system-ui,-apple-system,Arial,sans-serif;background:#f3f4f6}
+html,body{overflow-x:hidden} /* chặn trang bị tràn ngang trên mobile do ô select/input dài — bảng trong app vẫn cuộn ngang riêng bằng overflow-x-auto của nó */
+.tabbtn{width:100%;text-align:left;padding:10px 14px;border-radius:10px;font-weight:600;color:#374151}
+.tabbtn.nav-active{background:#fff1e6;color:#ea580c}
+.bottomnav .tabbtn{width:auto;text-align:center;padding:6px 4px;font-size:11px;border-radius:8px}
+.bottomnav .tabbtn.nav-active{background:#fff1e6;color:#ea580c}
+input,select,textarea{font-size:16px !important} /* iOS: ô nhập dưới 16px là Safari tự zoom khi chạm vào — đặt 16px để tắt auto-zoom, vẫn giữ pinch-zoom tay bình thường */
+.cal-cell{min-height:104px}
+@media(max-width:767px){.cal-cell{min-height:98px}.cal-cell .item{font-size:11px;line-height:1.25}}
+</style></head>
+<body>
+<div class="flex">
+<!-- Sidebar desktop kiểu KiotViet/Sapo: menu dọc, dễ bấm, không rối -->
+<aside class="hidden md:flex flex-col w-60 shrink-0 bg-white border-r fixed inset-y-0 left-0 p-4 z-20">
+<div class="flex items-center gap-2 mb-1"><div class="w-10 h-10 rounded-xl bg-orange-600 text-white flex items-center justify-center text-xl font-bold">T</div><div><div class="font-bold leading-tight">Tiệm Thuê Đồ</div><div class="text-xs text-stone-500">Quản lý thuê đồ</div></div></div>
+<div class="text-xs text-stone-500 mb-4 px-1">Người dùng:<br><b id="userEmailSide" class="text-stone-700 break-all">Chủ tiệm</b></div>
+<nav class="space-y-1">
+<button data-tab="time" class="tabbtn nav-active">📅 Lịch thuê</button>
+<button data-tab="order" class="tabbtn">🧾 Đơn thuê</button>
+<button data-tab="stock" class="tabbtn">👗 Thiết bị / Mẫu</button>
+<button data-tab="cust" class="tabbtn">👥 Khách hàng</button>
+<button data-tab="dash" class="tabbtn">📈 Doanh thu</button>
+<button data-tab="model" class="tabbtn">💰 Hồi vốn mẫu</button>
+<button data-tab="expense" class="tabbtn">💸 Khoản chi</button>
+</nav>
+<div class="mt-auto text-xs text-stone-400">Bản mở: chỉ chủ tiệm giữ link, đừng chia sẻ công khai.</div>
+</aside>
+
+<div class="flex-1 md:ml-60 min-w-0">
+<!-- Topbar -->
+<header class="bg-white border-b sticky top-0 z-20">
+<div class="max-w-6xl mx-auto px-3 md:px-6 py-3 flex flex-wrap gap-2 items-center justify-between">
+<div><h1 class="font-bold text-lg leading-tight">Tiệm Thuê Đồ</h1><p class="text-xs text-stone-500 md:hidden">Lịch thuê · Đơn · Thiết bị · Khách · Doanh thu</p><p class="text-xs text-stone-500 hidden md:block" id="userEmailTop">Chế độ mở — chỉ chủ tiệm giữ link</p></div>
+<div class="flex items-center gap-2">
+<button onclick="goOverdue()" title="Xem đơn quá hạn" class="relative border rounded-xl px-3 py-2.5 text-lg">🔔<span id="overdueBadge" class="hidden absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold rounded-full px-1.5 py-0.5">0</span></button>
+<div id="userBox" class="text-right text-xs hidden sm:block"><div id="userName" class="font-semibold">Chủ tiệm</div><div id="userEmail" class="text-stone-500">Chế độ mở — không cần đăng nhập</div></div>
+<div class="text-xs bg-amber-100 text-amber-800 rounded-lg px-2 py-1">Chế độ mở: chỉ chủ tiệm giữ link, đừng chia sẻ công khai</div>
+</div></div></header>
+
+<main class="max-w-6xl mx-auto px-3 md:px-6 py-4 pb-28 md:pb-10 space-y-4">
+
+<!-- LỊCH THUÊ: màn hình chính, giống ảnh ví dụ -->
+<section id="tab-time" class="space-y-4">
+<div class="bg-white rounded-2xl p-4 shadow">
+<div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+<h2 class="font-bold text-lg">📅 Lịch Thuê Đồ</h2>
+<div class="flex items-center gap-2">
+<div class="flex border rounded-full overflow-hidden text-sm font-semibold"><button id="btnMonth" onclick="setCalMode('month')" class="px-4 py-2 bg-orange-50 text-orange-600">Theo tháng</button><button id="btnWeek" onclick="setCalMode('week')" class="px-4 py-2">Theo tuần</button></div>
+<div class="flex items-center gap-1 border rounded-full px-2 py-1"><button onclick="calNav(-1)" class="px-2 py-1 text-lg">‹</button><b id="calMonthLabel" class="min-w-[86px] text-center">—</b><button onclick="calNav(1)" class="px-2 py-1 text-lg">›</button></div>
+</div></div>
+<button onclick="goOrder()" title="Nhảy sang tab Đơn thuê để tạo đơn mới ngay" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold text-base py-3.5 rounded-xl">+ ĐẶT LỊCH NHANH</button>
+<p class="text-sm text-stone-600 bg-amber-50 rounded-lg px-3 py-2 mt-3">⚡ Chạm ngày bất kỳ để xem nhanh chi tiết lịch thuê ở dưới.</p>
+<div class="grid grid-cols-7 text-center text-xs font-semibold text-stone-500 mt-3"><div>CN</div><div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div></div>
+<div id="calGrid" class="grid grid-cols-7 gap-1.5 mt-1"></div>
+<div class="flex gap-4 text-xs text-stone-600 mt-3"><span>▢ Trống</span><span class="text-orange-600">■ Có lịch thuê</span><span id="calSummary"></span></div>
+</div>
+<div class="bg-white rounded-2xl p-4 shadow"><h3 class="font-bold mb-2">Chi tiết ngày <span id="calSelectedLabel">—</span></h3><div id="calDetail" class="text-sm">Chạm 1 ngày trên lịch để xem đơn thuê ngày đó.</div></div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<h3 class="font-bold mb-2">Lịch theo chiếc (Gantt — xem chi tiết từng chiếc)</h3>
+<div class="flex flex-wrap gap-2 items-end"><label class="text-sm">Từ <input id="tlStart" type="date" class="border rounded-lg px-2 py-2"></label>
+<select id="tlDays" class="border rounded-lg px-2 py-2"><option value="14">14 ngày</option><option value="30" selected>30 ngày</option></select>
+<button onclick="loadTimeline()" class="bg-stone-900 text-white px-4 py-2.5 rounded-lg">Xem lịch</button></div>
+<div class="overflow-x-auto mt-3"><div id="timeline"></div></div></div>
+</section>
+
+<!-- ĐƠN THUÊ -->
+<section id="tab-order" class="space-y-4 hidden">
+<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow">
+<details open><summary class="font-bold cursor-pointer">📖 Hướng dẫn sử dụng — bấm để thu gọn</summary>
+<ol class="list-decimal ml-5 mt-2 text-sm space-y-1">
+<li><b>Bước 1 — Nhập mẫu và chiếc:</b> vào tab Thiết bị, lưu mẫu (giá cost, cọc mặc định, giá thuê 1–5 ngày, ảnh mẫu), rồi lưu từng chiếc (mã chiếc ngắn, ví dụ AD001-01, để trống là tự tạo theo mẫu). Chưa có mẫu/chiếc thì form tạo đơn sẽ trống.</li>
+<li><b>Bước 2 — Tạo đơn:</b> nhập tên khách, SĐT (1 SĐT = 1 hồ sơ khách), giờ nhận (mặc định giờ hiện tại). Ở ô “Chọn khoảng ngày thuê”: bấm “📅 Chọn trên lịch” chạm ngày nhận rồi ngày trả, hoặc bấm chip 1/2/3/4/5 ngày, hoặc nhập trực tiếp ngày trả — số ngày mọi dòng tự đổi theo. Sau đó bấm “+ Thêm dòng thuê”, gõ để tìm mẫu theo tên, mã hoặc ghi chú (VD: voan, đỏ, size M), bấm mẫu trong danh sách xổ xuống, để trống “Chiếc” để hệ thống tự chọn chiếc trống. Tiền thuê và cọc tự tính theo bảng giá + số ngày, hiện ngay ở ô “💰 Tiền tạm tính”; nhập tay giá/cọc riêng sẽ ghi đè dòng đó. Giá trên 5 ngày = giá 5 ngày + (số ngày − 5) × giá 1 ngày. Bấm “Tạo đơn”, mã đơn tự sinh dạng YYMMDD_001, hệ thống kiểm tra trùng chiếc ngay.</li>
+<li><b>Bước 3 — Thu tiền:</b> ở ô “Thu tiền / cọc”, chọn đơn trong danh sách (gõ để lọc theo mã đơn, tên khách, mẫu), chọn loại (Nhận cọc / Thu tiền thuê / Hoàn cọc / Khấu trừ cọc / Thu phí trễ), nhập số tiền rồi bấm “Ghi giao dịch”. Tiền không ghi đè mà ghi thành từng giao dịch riêng.</li>
+<li><b>Bước 4 — Giao đồ:</b> bấm nút “Giao” ở dòng đơn. Chiếc đó chuyển sang “Đang thuê” và bắt đầu tính quá hạn.</li>
+<li><b>Bước 5 — Trả đồ:</b> chọn đơn trong danh sách + giờ trả thực tế, phí hư hỏng nếu có, bấm “Ghi nhận trả đồ”. Phí trễ chốt theo giờ: làm tròn lên từng giờ, trừ ân hạn nếu có cấu hình. Sau đó thu phí trễ bằng giao dịch “Thu phí trễ” hoặc khấu trừ cọc.</li>
+<li><b>Bước 6 — Hoàn tất:</b> khi đã thu đủ tiền thuê và cọc đã hoàn/khấu trừ hết, bấm “Hoàn tất”. Đơn đã hoàn tất hoặc đã hủy thì không sửa được nữa.</li>
+<li><b>Sửa đơn:</b> bấm nút ✏️ ở dòng đơn để nạp lại đơn lên form, sửa xong bấm “Lưu sửa đơn” — hệ thống kiểm tra lại trùng chiếc và tính lại tổng tiền, hạn trả, không tạo đơn mới.</li>
+</ol>
+<p class="text-sm mt-2">Di chuột / chạm giữ vào từng nút để xem giải thích nhanh (tooltip). Dữ liệu mẫu tháng 10 có tiền tố TEST, dùng để tập thao tác, không phải đơn thật.</p>
+<button onclick="seedTest()" title="Tạo 3 mẫu TEST, 6 chiếc TEST, 2 khách TEST và 3 đơn mẫu tháng 10 (1 đơn đã hoàn tất, 1 đơn đang thuê, 1 đơn mới tạo). Bấm 1 lần, bấm lại sẽ báo đã có dữ liệu mẫu." class="mt-2 bg-amber-600 text-white px-4 py-2.5 rounded-lg font-semibold">🧪 Nạp dữ liệu mẫu tháng 10 (TEST)</button> <span id="seedMsg" class="text-sm"></span>
+</details></div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<h2 class="font-bold mb-3">Tạo đơn mới — mã tự sinh YYMMDD_001, backend kiểm tra trùng chiếc</h2>
+<div id="editBanner" class="hidden bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 mb-3 text-sm">✏️ Đang sửa đơn <b id="editOrderLabel"></b> — bấm Lưu sẽ cập nhật đơn cũ, không tạo đơn mới. <button onclick="cancelEdit()" class="underline font-semibold ml-2">Hủy sửa</button></div>
+<div class="grid md:grid-cols-3 gap-2 mb-2">
+<label class="text-sm block">Tên khách *<input id="cName" placeholder="Ví dụ: Nguyễn Thị A" title="Tên khách hàng, bắt buộc" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+<label class="text-sm block">SĐT *<input id="cPhone" placeholder="Ví dụ: 0901234567" title="1 SĐT = 1 hồ sơ khách, hệ thống tự tìm khách cũ theo SĐT" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+<label class="text-sm block">Địa chỉ<input id="cAddr" placeholder="Địa chỉ khách (nếu có)" title="Địa chỉ khách, không bắt buộc" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+<label class="text-sm block">Giờ nhận *<input id="pickup" type="datetime-local" onchange="onRangeChange()" title="Giờ khách nhận đồ, mặc định là giờ hiện tại. Hạn trả = giờ nhận + số ngày thuê" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+<label class="text-sm block">Giảm giá (đ)<input id="discount" type="number" placeholder="0" oninput="updateMoney()" title="Số tiền giảm trừ khỏi tổng tiền thuê của đơn" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+<label class="text-sm block">Phụ thu (đ)<input id="surcharge" type="number" placeholder="0" oninput="updateMoney()" title="Số tiền phụ thu cộng thêm vào tổng tiền thuê của đơn" class="border rounded-lg px-3 py-2.5 w-full mt-1"></label>
+</div>
+<div class="bg-orange-50 border border-orange-200 rounded-xl p-3">
+<div class="font-bold mb-2">1. Chọn khoảng ngày thuê — chọn xong mới chọn mẫu ở dưới</div>
+<div class="flex flex-wrap gap-2 items-center">
+<label class="text-sm flex-1 min-w-[150px]">Ngày trả<input id="returnAt" type="datetime-local" class="border rounded-lg px-3 py-2.5 w-full mt-1" onchange="onRangeChange()"></label>
+<button onclick="openDateModal()" title="Mở lịch chọn khoảng ngày: chạm ngày đầu là ngày nhận, chạm ngày sau là ngày trả" class="bg-orange-600 text-white font-bold px-4 py-3 rounded-xl">📅 Chọn trên lịch</button>
+</div>
+<div class="flex flex-wrap gap-2 mt-2"><span class="text-sm self-center">Nhanh:</span><button onclick="setRangeDays(1)" class="border bg-white px-3 py-2 rounded-lg font-semibold">1 ngày</button><button onclick="setRangeDays(2)" class="border bg-white px-3 py-2 rounded-lg font-semibold">2 ngày</button><button onclick="setRangeDays(3)" class="border bg-white px-3 py-2 rounded-lg font-semibold">3 ngày</button><button onclick="setRangeDays(4)" class="border bg-white px-3 py-2 rounded-lg font-semibold">4 ngày</button><button onclick="setRangeDays(5)" class="border bg-white px-3 py-2 rounded-lg font-semibold">5 ngày</button></div>
+<p id="rangeLabel" class="text-sm mt-2 font-semibold"></p>
+<p class="text-xs text-stone-500">Giờ nhận lấy ở ô “Giờ nhận” phía trên. Ngày trả mặc định = giờ nhận + 1 ngày. Đổi khoảng ngày là số ngày của mọi dòng thuê tự đổi theo, tiền tự tính lại.</p>
+</div>
+<div class="text-sm font-semibold text-stone-600 mt-2 mb-1">2. Chọn mẫu — gõ để tìm theo tên, mã hoặc ghi chú, bấm vào mẫu trong danh sách xổ xuống</div>
+<div id="lines" class="space-y-3"></div>
+<div id="moneyBox" class="bg-green-50 border border-green-200 rounded-xl p-3 text-sm font-semibold">💰 Tiền tạm tính: chưa có dòng thuê.</div>
+<button onclick="addLine()" title="Thêm 1 dòng thuê mới vào đơn (1 đơn có thể thuê nhiều mẫu/chiếc)" class="border px-4 py-2.5 rounded-lg font-semibold">+ Thêm dòng thuê</button>
+<input id="oNotes" placeholder="Ghi chú đơn" title="Ghi chú thêm cho đơn, ví dụ: khách lấy sớm, cần giao tận nơi" class="border rounded-lg px-3 py-2.5 w-full mt-2">
+<div class="mt-3 flex flex-wrap gap-2 items-center"><button id="saveOrderBtn" onclick="createOrder()" title="Tạo đơn mới (hoặc Lưu sửa đơn khi đang ở chế độ sửa ✏️). Hệ thống kiểm tra trùng chiếc trước khi lưu" class="bg-orange-600 text-white font-bold px-6 py-3 rounded-lg">Tạo đơn</button><span id="orderMsg" class="text-sm"></span></div>
+<p class="text-xs text-stone-500 mt-2">Để trống “Chiếc cụ thể” = hệ thống tự chọn chiếc trống. Giá 1–5 ngày lấy từ bảng giá mẫu, trên 5 ngày = giá 5 ngày + (số ngày − 5) × giá 1 ngày, vẫn nhập tay giá/cọc riêng từng dòng được.</p>
+</div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<h2 class="font-bold mb-2">Thu tiền / cọc / hoàn cọc / khấu trừ</h2>
+<p class="text-sm text-stone-500 mb-2">Chọn đơn trong danh sách bên dưới (gõ để lọc theo mã đơn, tên khách, SĐT, mẫu) — không cần nhập mã đơn tay. Bấm ✏️ ở dòng đơn để sửa thông tin đơn đó.</p>
+<input id="payOrderSearch" placeholder="🔍 Tìm đơn: mã đơn, tên khách, SĐT, mẫu..." class="border rounded-lg px-3 py-2.5 w-full min-w-0" oninput="renderPayPick()" onfocus="renderPayPick()">
+<select id="payStatusFilter" class="border rounded-lg px-3 py-2.5 w-full min-w-0 mt-2" onchange="renderPayPick()"><option value="">Tất cả trạng thái</option><option>Đã tạo đơn</option><option>Đã cọc</option><option>Đã giao khách</option><option>Hết thời gian thuê</option><option>Khách đã trả</option><option>Hoàn tất</option><option>Đã hủy</option></select>
+<div id="payPick" class="mt-2 max-h-56 overflow-y-auto border rounded-xl divide-y"></div>
+<div id="paySelected" class="text-sm font-semibold mt-2"></div>
+<input type="hidden" id="payOrder">
+<div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2">
+<select id="payType" class="border rounded-lg px-3 py-2.5 min-w-0 w-full"><option value="COC">Nhận cọc</option><option value="THUE">Thu tiền thuê</option><option value="HOAN_COC">Hoàn cọc</option><option value="KHAU_TRU_COC">Khấu trừ cọc</option><option value="PHI_TRE">Thu phí trễ</option></select>
+<input id="payAmount" type="number" placeholder="Số tiền (đ)" class="border rounded-lg px-3 py-2.5 min-w-0 w-full">
+<select id="payMethod" class="border rounded-lg px-3 py-2.5 min-w-0 w-full"><option>Tiền mặt</option><option>Chuyển khoản</option></select>
+<input id="payNote" placeholder="Ghi chú / lý do khấu trừ" class="border rounded-lg px-3 py-2.5 min-w-0 w-full">
+</div><button onclick="addPayment()" title="Ghi 1 giao dịch tiền riêng (nhận cọc, thu thuê, hoàn cọc, khấu trừ cọc, thu phí trễ). Tiền không ghi đè, mỗi lần ghi là 1 dòng riêng" class="mt-2 bg-stone-900 text-white px-4 py-2.5 rounded-lg">Ghi giao dịch</button> <span id="payMsg" class="text-sm"></span>
+</div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<h2 class="font-bold mb-2">Trả đồ — chốt phí trễ theo giờ</h2>
+<p class="text-sm text-stone-500 mb-2">Chọn đơn trong danh sách bên dưới (gõ để lọc) — không cần nhập mã đơn tay. Bấm ✏️ ở dòng đơn để sửa thông tin đơn đó.</p>
+<input id="retOrderSearch" placeholder="🔍 Tìm đơn: mã đơn, tên khách, SĐT, mẫu..." class="border rounded-lg px-3 py-2.5 w-full min-w-0" oninput="renderRetPick()" onfocus="renderRetPick()">
+<select id="retStatusFilter" class="border rounded-lg px-3 py-2.5 w-full min-w-0 mt-2" onchange="renderRetPick()"><option value="">Tất cả trạng thái</option><option>Đã tạo đơn</option><option>Đã cọc</option><option>Đã giao khách</option><option>Hết thời gian thuê</option><option>Khách đã trả</option><option>Hoàn tất</option><option>Đã hủy</option></select>
+<div id="retPick" class="mt-2 max-h-56 overflow-y-auto border rounded-xl divide-y"></div>
+<div id="retSelected" class="text-sm font-semibold mt-2"></div>
+<input type="hidden" id="retOrder">
+<div class="grid grid-cols-2 md:grid-cols-3 gap-2 mt-2">
+<input id="retAt" type="datetime-local" class="border rounded-lg px-3 py-2.5 min-w-0 w-full">
+<input id="damage" type="number" placeholder="Phí hư hỏng/mất đồ (đ)" class="border rounded-lg px-3 py-2.5 min-w-0 w-full">
+<button onclick="returnOrder()" title="Chốt trả đồ: ghi giờ trả thực tế, tính phí trễ theo giờ và phí hư hỏng. Sau đó vẫn cần ghi giao dịch Thu phí trễ hoặc Khấu trừ cọc để thu tiền" class="bg-stone-900 text-white px-4 py-2.5 rounded-lg min-w-0">Ghi nhận trả đồ</button>
+</div><span id="retMsg" class="text-sm"></span>
+<p class="text-xs text-stone-500 mt-1">Công thức: giờ trễ = làm tròn lên ((giờ trả − hạn trả − ân hạn) / 1 giờ), phí = giờ trễ × phí/giờ, có trần nếu đã cấu hình trong CauHinh.</p>
+</div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<input id="searchOrder" placeholder="Tìm mã đơn / tên khách / SĐT / mẫu..." class="border rounded-lg px-3 py-3 w-full mb-3" oninput="ORDER_PAGE=1;renderOrders()">
+<div id="orderCustChip" class="hidden mb-3"><span id="orderCustChipText" class="text-sm font-semibold"></span> <button onclick="clearCustFilter()" class="underline text-sm ml-1">✕ Bỏ lọc</button></div>
+<div class="flex flex-wrap gap-2 mb-3">
+<button id="chip-all" onclick="setOrderFilter('all')" class="border px-3 py-2 rounded-full font-semibold bg-orange-600 text-white">Tất cả</button>
+<button id="chip-pending" onclick="setOrderFilter('pending')" class="border px-3 py-2 rounded-full font-semibold">Chờ giao</button>
+<button id="chip-renting" onclick="setOrderFilter('renting')" class="border px-3 py-2 rounded-full font-semibold">Đang thuê</button>
+<button id="chip-overdue" onclick="setOrderFilter('overdue')" class="border px-3 py-2 rounded-full font-semibold">Quá hạn</button>
+<button id="chip-done" onclick="setOrderFilter('done')" class="border px-3 py-2 rounded-full font-semibold">Đã xong</button>
+</div>
+<div id="orderCards" class="grid md:grid-cols-2 gap-4"></div>
+<div id="orderPag" class="mt-3"></div>
+</div>
+</section>
+
+<!-- THIẾT BỊ / MẪU — popup, nút to cho mobile, không còn form dài khó bấm -->
+<section id="tab-stock" class="space-y-4 hidden">
+<div class="bg-white rounded-2xl p-4 shadow">
+<div class="flex flex-wrap gap-2 items-center justify-between"><h2 class="font-bold">Mẫu đồ</h2><button onclick="openModelModal()" title="Mở popup thêm mẫu mới: nhập tên, giá cost, cọc, giá thuê 1–5 ngày và ảnh mẫu" class="bg-orange-600 text-white font-bold px-5 py-3 rounded-xl">＋ Thêm mẫu mới</button></div>
+<p class="text-sm text-stone-500 mt-1">Bấm ✏️ để sửa mẫu trong popup, bấm 🗑️ để xoá mẫu (chỉ xoá được mẫu chưa có chiếc và chưa có đơn).</p>
+<div class="flex flex-wrap gap-2 items-center mt-3"><button onclick="seedDemo()" title="Gắn ảnh demo cho các mẫu chưa có ảnh và thêm 4 khách mẫu (chạy lại không tạo trùng)" class="border border-orange-200 text-orange-700 font-bold px-4 py-2.5 rounded-xl text-sm">🧪 Nạp demo: ảnh mẫu + khách mẫu</button><span id="demoMsg" class="text-sm"></span></div>
+<input id="prodSearch" placeholder="🔍 Tìm mẫu: gõ tên, mã hoặc từ trong ghi chú (VD: voan, đỏ, size M)..." class="border rounded-lg px-3 py-3 w-full mt-3" oninput="renderStock()">
+<div id="prodTable" class="overflow-x-auto mt-3"></div><span id="prodMsg" class="text-sm"></span></div>
+<div class="bg-white rounded-2xl p-4 shadow">
+<div class="flex flex-wrap gap-2 items-center justify-between"><h2 class="font-bold">Từng chiếc đồ</h2><button onclick="openAssetModal()" title="Mở popup thêm chiếc mới: chọn mẫu, nhập mã chiếc, giá mua, trạng thái kho" class="bg-stone-900 text-white font-bold px-5 py-3 rounded-xl">＋ Thêm chiếc mới</button></div>
+<p class="text-sm text-stone-500 mt-1">Bấm ✏️ để sửa chiếc trong popup, bấm 🗑️ để xoá chiếc (chỉ xoá được chiếc chưa có đơn thuê).</p>
+<input id="assetSearch" placeholder="🔍 Tìm chiếc: gõ mã chiếc, mã mẫu hoặc tên mẫu (VD: SP0001-01, VCC001, váy)..." class="border rounded-lg px-3 py-3 w-full mt-3" oninput="renderStock()">
+<div id="assetTable" class="mt-3 overflow-x-auto"></div></div>
+</section>
+
+<!-- KHÁCH — thẻ kiểu app thuê máy ảnh, tối ưu hơn: không che SĐT, 1 cột mobile / 2 cột desktop -->
+<section id="tab-cust" class="space-y-4 hidden">
+<div class="bg-white rounded-2xl p-4 shadow"><h2 class="font-bold mb-2">👥 Khách hàng</h2><input id="custSearch" placeholder="🔍 Tìm khách: tên, SĐT, địa chỉ..." class="border rounded-lg px-3 py-3 w-full" oninput="CUST_PAGE=1;renderCusts()"></div>
+<div id="custCards" class="grid md:grid-cols-2 gap-4"></div>
+<div id="custPag"></div>
+</section>
+
+<!-- DOANH THU -->
+<section id="tab-dash" class="space-y-4 hidden">
+<div class="bg-white rounded-2xl p-4 shadow flex flex-wrap gap-2 items-end">
+<label class="text-sm">Từ <input id="fFrom" type="date" class="border rounded-lg px-2 py-2"></label><label class="text-sm">Đến <input id="fTo" type="date" class="border rounded-lg px-2 py-2"></label>
+<button onclick="loadDash()" class="bg-stone-900 text-white px-4 py-2.5 rounded-lg">Lọc</button>
+<button onclick="preset('month')" class="border px-3 py-2.5 rounded-lg">Tháng này</button><button onclick="preset('year')" class="border px-3 py-2.5 rounded-lg">Năm nay</button>
+<span id="dashMsg" class="text-sm text-red-600"></span></div>
+<div id="stats" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"></div>
+<div class="bg-white rounded-2xl p-4 shadow"><h2 class="font-bold mb-2">⚠️ Đơn quá hạn</h2><div id="overdue"></div></div>
+<div class="grid md:grid-cols-2 gap-4">
+<div class="bg-white rounded-2xl p-4 shadow"><h2 class="font-bold mb-2">Dòng tiền theo ngày</h2><div id="byDay" class="space-y-1 text-sm"></div></div>
+<div class="bg-white rounded-2xl p-4 shadow"><h2 class="font-bold mb-2">Doanh thu theo mẫu</h2><div id="byModel" class="space-y-1 text-sm"></div></div>
+</div>
+<button onclick="showTab('model')" class="w-full bg-white rounded-2xl p-4 shadow font-bold text-left">💰 Xem hồi vốn từng mẫu →</button>
+<p class="text-xs text-stone-500">Doanh thu thuê = giao dịch loại THUE trong kỳ. Thực thu = mọi giao dịch thu trong kỳ. Cọc đang giữ = cọc đã nhận − đã hoàn − đã khấu trừ. Phí trễ chỉ tính khi đã chốt lúc trả đồ, không cộng phí dự kiến.</p>
+</section>
+
+<!-- HỒI VỐN -->
+<section id="tab-model" class="space-y-4 hidden"><div class="bg-white rounded-2xl p-4 shadow overflow-x-auto"><h2 class="font-bold mb-2">Mỗi mẫu đã hồi vốn chưa?</h2><div id="modelTable"></div><p class="text-xs text-stone-500 mt-2">Lợi nhuận mẫu = doanh thu thuê − chi phí trực tiếp (tab ChiPhi). Tổng vốn = tổng giá mua từng chiếc. Đây là góc nhìn đầu tư, không trừ toàn bộ vốn vào mỗi lần thuê.</p></div></section>
+
+<!-- KHOẢN CHI — như mục Khoản chi ở menu dưới app thuê máy ảnh -->
+<section id="tab-expense" class="space-y-4 hidden">
+<div class="bg-white rounded-2xl p-4 shadow flex flex-wrap gap-2 items-end">
+<label class="text-sm">Từ <input id="expFrom" type="date" class="border rounded-lg px-2 py-2"></label><label class="text-sm">Đến <input id="expTo" type="date" class="border rounded-lg px-2 py-2"></label>
+<button onclick="loadExpenses()" class="bg-stone-900 text-white px-4 py-2.5 rounded-lg">Lọc</button>
+<button onclick="openExpenseModal()" class="bg-orange-600 text-white font-bold px-5 py-3 rounded-xl">＋ Thêm khoản chi</button>
+<span id="expTotal" class="text-sm font-bold"></span></div>
+<div id="expTable" class="bg-white rounded-2xl p-4 shadow overflow-x-auto"></div>
+<p class="text-xs text-stone-500">Khoản chi (giặt, sửa đồ, vận chuyển...) được trừ vào lợi nhuận mẫu ở tab Hồi vốn khi gắn với mẫu đó.</p>
+</section>
+</main>
+</div></div>
+
+<!-- Bottom nav mobile kiểu app thuê đồ trong ảnh ví dụ -->
+<nav class="bottomnav md:hidden fixed bottom-0 left-0 right-0 bg-white border-t z-30 px-2 py-2 grid grid-cols-6 gap-1">
+<button data-tab="time" class="tabbtn nav-active">📅<br>Lịch thuê</button>
+<button data-tab="order" class="tabbtn">🧾<br>Đơn thuê</button>
+<button data-tab="stock" class="tabbtn">👗<br>Thiết bị</button>
+<button data-tab="cust" class="tabbtn">👥<br>Khách</button>
+<button data-tab="dash" class="tabbtn">📈<br>Doanh thu</button>
+<button data-tab="expense" class="tabbtn">💸<br>Khoản chi</button>
+</nav>
+
+<!-- Popup chung: trên mobile chiếm gần full màn hình, nút to dễ bấm -->
+<div id="modelModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeModelModal()">
+<div class="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-3"><h3 id="modelModalTitle" class="font-bold text-lg">Thêm mẫu mới</h3><button onclick="closeModelModal()" class="text-2xl px-2" title="Đóng popup, không lưu">✕</button></div>
+<input type="hidden" id="mRow">
+<div class="space-y-2">
+<label class="text-sm block">Mã mẫu ngắn (để trống = tự tạo theo tên, VD Áo dài → AD001)<input id="mId" placeholder="VD: AD001" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Tên mẫu *<input id="mName" placeholder="Ví dụ: Váy công chúa" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Ghi chú mẫu (tìm kiếm được: chất liệu, màu, size, kiểu dáng...)<textarea id="mDesc" placeholder="Ví dụ: vải voan, màu đỏ, size M, có kèm phụ kiện" class="border rounded-lg px-3 py-3 w-full mt-1" rows="2"></textarea></label>
+<div class="grid grid-cols-2 gap-2">
+<label class="text-sm block">Giá cost<input id="mCost" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Cọc mặc định<input id="mDep" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Thuê 1 ngày<input id="m1" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Thuê 2 ngày<input id="m2" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Thuê 3 ngày<input id="m3" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Thuê 4 ngày<input id="m4" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Thuê 5 ngày<input id="m5" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Trạng thái<select id="mStatus" class="border rounded-lg px-3 py-3 w-full mt-1"><option>Đang cho thuê</option><option>Ngừng cho thuê</option></select></label>
+</div>
+<div id="mPhotoPrev" class="mb-1"></div><label class="text-sm block">Ảnh mẫu (lưu vào Drive Tiemthuedo/SanPham/ — ảnh sẽ hiện xem trước ở tab mẫu và chi tiết ngày)<input id="mPhoto" type="file" accept="image/*" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+</div>
+<div class="flex gap-2 mt-4"><button onclick="saveModelModal()" class="flex-1 bg-orange-600 text-white font-bold py-3.5 rounded-xl">Lưu mẫu</button><button onclick="closeModelModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Hủy</button></div>
+</div></div>
+<div id="assetModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeAssetModal()">
+<div class="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-3"><h3 id="assetModalTitle" class="font-bold text-lg">Thêm chiếc mới</h3><button onclick="closeAssetModal()" class="text-2xl px-2" title="Đóng popup, không lưu">✕</button></div>
+<input type="hidden" id="amRow">
+<div class="space-y-2">
+<label class="text-sm block">Mã chiếc (để trống = tự tạo theo mẫu, VD AD001-01)<input id="amId" placeholder="VD: AD001-01 (để trống = tự tạo)" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Mẫu<input id="amProdSearch" placeholder="🔍 Gõ để tìm mẫu: tên hoặc mã (VD: váy, VCC001)..." class="border rounded-lg px-3 py-3 w-full mt-1" oninput="filterAssetProd()"><select id="amProd" class="border rounded-lg px-3 py-3 w-full mt-1"></select></label>
+<label class="text-sm block">Giá mua chiếc này (để trống = giá cost mẫu)<input id="amCost" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Trạng thái kho<select id="amStatus" class="border rounded-lg px-3 py-3 w-full mt-1"><option>Sẵn sàng</option><option>Bảo trì</option><option>Hỏng</option></select></label>
+</div>
+<div class="flex gap-2 mt-4"><button onclick="saveAssetModal()" class="flex-1 bg-stone-900 text-white font-bold py-3.5 rounded-xl">Lưu chiếc</button><button onclick="closeAssetModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Hủy</button></div>
+</div></div>
+<div id="confirmModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+<div class="bg-white w-full max-w-sm rounded-2xl p-4">
+<h3 class="font-bold text-lg mb-2">Xác nhận xoá?</h3><p id="confirmText" class="text-sm mb-4"></p>
+<div class="flex gap-2"><button id="confirmYes" class="flex-1 bg-red-600 text-white font-bold py-3.5 rounded-xl">Xoá</button><button onclick="closeConfirmModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Không, giữ lại</button></div>
+</div></div>
+<div id="dateModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeDateModal()">
+<div class="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-2"><h3 class="font-bold text-lg">Chọn khoảng ngày thuê</h3><button onclick="closeDateModal()" class="text-2xl px-2">✕</button></div>
+<p class="text-sm text-stone-500 mb-3">Chạm ngày đầu = ngày nhận, chạm ngày sau = ngày trả. Ngày trong khoảng sẽ tô cam.</p>
+<div class="flex items-center justify-between mb-2"><button onclick="dateNav(-1)" class="border px-3 py-2 rounded-lg">‹</button><b id="dateMonthLabel"></b><button onclick="dateNav(1)" class="border px-3 py-2 rounded-lg">›</button></div>
+<div class="grid grid-cols-7 text-center text-xs font-semibold text-stone-500"><div>CN</div><div>T2</div><div>T3</div><div>T4</div><div>T5</div><div>T6</div><div>T7</div></div>
+<div id="dateCalGrid" class="grid grid-cols-7 gap-1 mt-1"></div>
+<p id="datePicked" class="text-sm mt-3 font-semibold"></p>
+<div class="flex gap-2 mt-3"><button onclick="applyDateRange()" class="flex-1 bg-orange-600 text-white font-bold py-3.5 rounded-xl">Xong — dùng khoảng này</button><button onclick="closeDateModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Hủy</button></div>
+</div></div>
+<div id="custModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeCustModal()">
+<div class="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-3"><h3 class="font-bold text-lg">Sửa khách hàng</h3><button onclick="closeCustModal()" class="text-2xl px-2">✕</button></div>
+<input type="hidden" id="cuId">
+<div class="space-y-2">
+<label class="text-sm block">Tên khách *<input id="cuName" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">SĐT *<input id="cuPhone" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Địa chỉ<input id="cuAddr" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Ghi chú<input id="cuNotes" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+</div>
+<div class="flex gap-2 mt-4"><button onclick="saveCustModal()" class="flex-1 bg-orange-600 text-white font-bold py-3.5 rounded-xl">Lưu khách</button><button onclick="closeCustModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Hủy</button></div>
+</div></div>
+<div id="orderDetailModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeOrderDetail()">
+<div class="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-3"><h3 id="odTitle" class="font-bold text-lg">Chi tiết đơn</h3><button onclick="closeOrderDetail()" class="text-2xl px-2">✕</button></div>
+<div id="odBody" class="text-sm space-y-3"></div>
+<div class="border-t pt-3 mt-3 space-y-2">
+<label class="text-sm block font-semibold">＋ Thêm ghi chú nhanh<textarea id="odNote" placeholder="VD: khách dặn giao sớm, đồ cần giặt riêng..." class="border rounded-lg px-3 py-3 w-full mt-1 font-normal" rows="2"></textarea></label>
+<button onclick="detailNote()" class="bg-stone-900 text-white font-bold px-4 py-3 rounded-xl w-full">Lưu ghi chú</button>
+</div>
+<div class="border-t pt-3 space-y-2">
+<div class="font-semibold text-sm">Thu tiền / cọc cho đơn này</div>
+<div class="grid grid-cols-2 gap-2">
+<select id="odPayType" class="border rounded-lg px-3 py-3"><option value="COC">Nhận cọc</option><option value="THUE">Thu tiền thuê</option><option value="HOAN_COC">Hoàn cọc</option><option value="KHAU_TRU_COC">Khấu trừ cọc</option><option value="PHI_TRE">Thu phí trễ</option></select>
+<input id="odPayAmount" type="number" placeholder="Số tiền (đ)" class="border rounded-lg px-3 py-3">
+</div>
+<button onclick="detailPay()" class="bg-orange-600 text-white font-bold px-4 py-3 rounded-xl w-full">Ghi giao dịch</button>
+</div>
+<div class="border-t pt-3 space-y-2">
+<div class="font-semibold text-sm">Trả đồ</div>
+<div class="grid grid-cols-2 gap-2"><input id="odRetAt" type="datetime-local" class="border rounded-lg px-3 py-3"><input id="odDamage" type="number" placeholder="Phí hư hỏng (đ)" class="border rounded-lg px-3 py-3"></div>
+<button onclick="detailReturn()" class="bg-stone-900 text-white font-bold px-4 py-3 rounded-xl w-full">Ghi nhận trả đồ</button>
+<span id="odMsg" class="text-sm"></span>
+</div>
+</div></div>
+<div id="expenseModal" class="hidden fixed inset-0 z-50 bg-black/50 flex items-end md:items-center justify-center p-0 md:p-4" onclick="if(event.target===this)closeExpenseModal()">
+<div class="bg-white w-full md:max-w-md rounded-t-2xl md:rounded-2xl p-4 max-h-[92vh] overflow-y-auto">
+<div class="flex justify-between items-center mb-3"><h3 class="font-bold text-lg">Thêm khoản chi</h3><button onclick="closeExpenseModal()" class="text-2xl px-2">✕</button></div>
+<div class="space-y-2">
+<label class="text-sm block">Loại chi<select id="exCat" class="border rounded-lg px-3 py-3 w-full mt-1"><option>Giặt</option><option>Sửa đồ</option><option>Vận chuyển</option><option>Khác</option></select></label>
+<label class="text-sm block">Số tiền (đ) *<input id="exAmount" type="number" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Ngày chi<input id="exDate" type="date" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+<label class="text-sm block">Mẫu liên quan (không bắt buộc)<select id="exProd" class="border rounded-lg px-3 py-3 w-full mt-1"></select></label>
+<label class="text-sm block">Mô tả<input id="exDesc" class="border rounded-lg px-3 py-3 w-full mt-1"></label>
+</div>
+<div class="flex gap-2 mt-4"><button onclick="saveExpense()" class="flex-1 bg-orange-600 text-white font-bold py-3.5 rounded-xl">Lưu khoản chi</button><button onclick="closeExpenseModal()" class="flex-1 border font-bold py-3.5 rounded-xl">Hủy</button></div>
+</div></div>
+<script>
+let PRODS=[], ASSETS=[], ORDERS=[], CUSTS=[], LINES=[], EXPENSES=[];
+let CUST_PAGE=1, ORDER_PAGE=1, ORDER_STATUS_FILTER='all', ORDER_CUST_FILTER='', OD_ID='';
+let CAL_MODE='month', CAL_CURSOR=new Date(), CAL_DATA=null, CAL_SELECTED=null;
+const fmt=n=>new Intl.NumberFormat('vi-VN').format(n||0)+'đ';
+async function api(action,payload){
+  // BẢN MỞ: không cần token, không cần login. Ưu tiên google.script.run khi mở
+  // trực tiếp link Web App, còn lại gọi API_URL không kèm token.
+  if(window.google&&google.script&&google.script.run){return new Promise((res,rej)=>google.script.run.withSuccessHandler(res).withFailureHandler(rej).callApi(action,payload||{}));}
+  const r=await fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action,payload:payload||{}})});
+  const j=await r.json();if(!j.success)throw new Error(j.error);return j.data;
+}
+function showTab(tab){document.querySelectorAll('.tabbtn').forEach(x=>x.classList.remove('nav-active'));document.querySelectorAll('.tabbtn[data-tab="'+tab+'"]').forEach(x=>x.classList.add('nav-active'));document.querySelectorAll('main section').forEach(s=>s.classList.add('hidden'));document.getElementById('tab-'+tab).classList.remove('hidden');window.scrollTo({top:0,behavior:'smooth'});
+ if(tab==='stock')loadStock(); if(tab==='time')loadCalendar(); if(tab==='cust')loadCusts(); if(tab==='model')loadModels(); if(tab==='dash')loadDash(); if(tab==='expense')loadExpenses();}
+document.querySelectorAll('.tabbtn').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
+function goOrder(){showTab('order');setTimeout(()=>{const el=document.getElementById('cName');if(el)el.focus();},100);}
+// ---------- Lịch tháng / tuần kiểu ảnh ví dụ ----------
+function calRange(){
+  if(CAL_MODE==='week'){const d=new Date(CAL_CURSOR);const day=d.getDay();const sun=new Date(d);sun.setDate(d.getDate()-day);const days=[];for(let i=0;i<7;i++){const x=new Date(sun);x.setDate(sun.getDate()+i);days.push(x);}return {start:sun,days:days,label:'Tuần '+sun.getDate()+'/'+(sun.getMonth()+1)};}
+  const y=CAL_CURSOR.getFullYear(),m=CAL_CURSOR.getMonth();const first=new Date(y,m,1);const daysIn=new Date(y,m+1,0).getDate();const days=[];for(let i=1;i<=daysIn;i++)days.push(new Date(y,m,i));return {start:first,days:days,label:(m+1)+'/'+y,first:first};}
+function setCalMode(mode){CAL_MODE=mode;document.getElementById('btnMonth').className='px-4 py-2 '+(mode==='month'?'bg-orange-50 text-orange-600':'');document.getElementById('btnWeek').className='px-4 py-2 '+(mode==='week'?'bg-orange-50 text-orange-600':'');loadCalendar();}
+function calNav(dir){if(CAL_MODE==='month'){CAL_CURSOR=new Date(CAL_CURSOR.getFullYear(),CAL_CURSOR.getMonth()+dir,1);}else{CAL_CURSOR=new Date(CAL_CURSOR.getTime()+dir*7*86400000);}loadCalendar();}
+async function loadCalendar(){
+  try{
+    const r=calRange();document.getElementById('calMonthLabel').textContent=r.label;
+    const startStr=r.start.toISOString().slice(0,10);
+    const d=await api('timeline',{start:startStr,days:r.days.length});
+    CAL_DATA={range:r,data:d};
+    // Gom theo ngày: mỗi ô timeline là 1 chiếc, cell chứa mã đơn — ô lịch hiện TÊN MẪU gọn (dễ đọc hơn mã chiếc) và cho chữ xuống dòng thay vì cắt "TE..."
+    function shortModelName(n){return String(n||'').replace(/\s+TEST(-POPUP)?$/,'');}
+    const perDay=r.days.map((_,i)=>{const list=[];d.rows.forEach(row=>{const c=row.cells[i];if(c){const pp=PRODS.find(x=>x.product_id===row.asset.product_id);list.push({asset:row.asset.asset_id,label:pp?shortModelName(pp.name):row.asset.asset_id});}});return list;});
+    let html='';
+    if(CAL_MODE==='month'){const offset=r.first.getDay();for(let i=0;i<offset;i++)html+='<div></div>';}
+    r.days.forEach((day,i)=>{
+      const list=perDay[i];const isToday=new Date().toDateString()===day.toDateString();const isSel=CAL_SELECTED&&CAL_SELECTED.toDateString()===day.toDateString();
+      const shown=list.slice(0,2);const extra=list.length-shown.length;
+      html+=`<button onclick="selectCalDay(${i})" class="cal-cell text-left border rounded-xl p-1.5 ${isSel?'ring-2 ring-orange-500 bg-orange-50':list.length?'bg-orange-50/60':'bg-white'}"><div class="flex justify-between items-center"><b class="text-[17px] ${isToday?'text-orange-600':''}">${day.getDate()}</b>${list.length?`<span class="text-[10px] bg-orange-100 text-orange-700 rounded-full px-1.5">${list.length}</span>`:''}</div>${shown.map(x=>`<div class="item text-orange-800 break-words leading-tight" title="${x.asset}">■ ${x.label}</div>`).join('')}${extra>0?`<div class="item text-stone-500">+${extra} nữa</div>`:''}</button>`;});
+    document.getElementById('calGrid').innerHTML=html;
+    const busyDays=perDay.filter(l=>l.length).length;
+    document.getElementById('calSummary').textContent='· '+busyDays+' ngày có lịch';
+    if(!CAL_SELECTED||CAL_MODE==='month')selectCalDay(r.days.findIndex(x=>x.toDateString()===new Date().toDateString())>=0?r.days.findIndex(x=>x.toDateString()===new Date().toDateString()):0,false);
+    else selectCalDay(0,false);
+  }catch(e){document.getElementById('calGrid').innerHTML='<div class="col-span-7 text-sm text-red-600">❌ '+e.message+'</div>';}
+}
+function selectCalDay(i,scroll){
+  if(!CAL_DATA)return;const day=CAL_DATA.range.days[i];CAL_SELECTED=day;
+  document.getElementById('calSelectedLabel').textContent=day.getDate()+'/'+(day.getMonth()+1)+'/'+day.getFullYear();
+  // Highlight lại ô đã chọn (đơn giản: tải lại lưới rồi tô lại bằng class đã có ở lần render sau)
+  const d=CAL_DATA.data;const items=[];d.rows.forEach(row=>{const c=row.cells[i];if(c)items.push(row.asset.asset_id+' — đơn '+c);});
+  const orders=ORDERS.filter(o=>{const s=new Date(o.pickup_at),e=new Date(o.due_at);const ds=new Date(day);ds.setHours(0,0,0,0);const de=new Date(day);de.setHours(23,59,59,999);return s<=de&&e>ds;});
+  const calEl=document.getElementById('calDetail');
+  if(!ORDERS.length){calEl.innerHTML='<div>Đang tải đơn...</div>';loadOrders().then(()=>selectCalDay(i,false));}
+  else if(!orders.length){calEl.innerHTML=items.length?items.map(x=>`<div class="py-1 border-b">📦 ${x}</div>`).join(''):'<div>Ngày này chưa có lịch thuê.</div>';}
+  else{calEl.innerHTML=orders.map(o=>{const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};const lines=LINES.filter(l=>l.order_id===o.order_id);const dayAssets=items.filter(x=>x.endsWith('đơn '+o.order_id)).map(x=>x.split(' — ')[0]);const thumbs=lines.slice(0,3).map(l=>{const p=PRODS.find(x=>x.product_id===l.product_id);return prodThumb(p,44);}).join('');return `<button onclick="openOrderDetail('${o.order_id}')" class="w-full text-left bg-white border rounded-xl p-3 mb-2 flex items-center gap-3"><div class="flex shrink-0">${thumbs||prodThumb(null,44)}</div><div class="min-w-0 flex-1"><div class="flex flex-wrap gap-2 items-center"><b>🧾 ${o.order_id}</b>${statusPill(o.status)}</div><div class="text-sm text-stone-600 truncate">${c.full_name||o.customer_id}${dayAssets.length?(' · '+dayAssets.join(', ')):''}</div><div class="text-sm font-semibold">${fmt(o.rental_subtotal)}</div></div><span class="text-stone-400 text-xl shrink-0">›</span></button>`;}).join('');}
+  if(scroll!==false)document.getElementById('calDetail').scrollIntoView({behavior:'smooth',block:'nearest'});
+  // Tô lại ô chọn mà không cần tải lại API
+  document.querySelectorAll('#calGrid button').forEach((b,idx)=>{b.classList.toggle('ring-2',idx===i);b.classList.toggle('ring-orange-500',idx===i);});
+}
+function preset(k){const d=new Date();if(k==='month'){document.getElementById('fFrom').value=d.toISOString().slice(0,8)+'01';}else{document.getElementById('fFrom').value=d.getFullYear()+'-01-01';}document.getElementById('fTo').value=d.toISOString().slice(0,10);loadDash();}
+async function loadDash(){try{const d=await api('dashboard',{from:document.getElementById('fFrom').value,to:document.getElementById('fTo').value});
+ const cards=[['Doanh thu thuê',d.doanhThuThue],['Thực thu',d.thucThu],['Cọc đang giữ',d.cocDangGiu],['Công nợ',d.congNo],['Phí trễ',d.phiTre],['Đang thuê / Quá hạn',d.rentingCount+' / '+d.overdueCount]];
+ document.getElementById('stats').innerHTML=cards.map(c=>`<div class="bg-white rounded-2xl p-4 shadow"><div class="text-xs text-stone-500">${c[0]}</div><div class="text-xl font-bold">${typeof c[1]==='number'?fmt(c[1]):c[1]}</div></div>`).join('');
+ document.getElementById('overdue').innerHTML=d.overdue.length?d.overdue.join(', '):'Không có đơn quá hạn.';
+ const bar=(obj)=>Object.entries(obj).map(([k,v])=>`<div class="flex justify-between"><span>${k}</span><b>${fmt(v)}</b></div>`).join('')||'—';
+ document.getElementById('byDay').innerHTML=bar(d.byDay);document.getElementById('byModel').innerHTML=bar(d.byModel);document.getElementById('dashMsg').textContent='';
+ }catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message+' — Thử tải lại trang.';}}
+function priceForFront(p,days){const d=Number(days);if(d>=1&&d<=5)return Number(p['rental_price_'+d+'d']||0);return Number(p.rental_price_5d||0)+(d-5)*Number(p.rental_price_1d||0);}
+function updateMoney(){let sub=0,depTot=0;document.querySelectorAll('.line').forEach(el=>{const pid=el.querySelector('.prod').value;const p=PRODS.find(x=>x.product_id===pid);const days=Math.max(1,Number(el.querySelector('.days').value||1));let fee=0,dep=0;if(p){fee=el.querySelector('.fee').value!==''?Number(el.querySelector('.fee').value):priceForFront(p,days);dep=el.querySelector('.dep').value!==''?Number(el.querySelector('.dep').value):Number(p.default_deposit||0);el.querySelector('.lineMoney').textContent='Tiền thuê '+fmt(fee)+' · Cọc '+fmt(dep)+' · '+(p.description?('Ghi chú: '+p.description):'');}else{el.querySelector('.lineMoney').textContent='Chưa chọn mẫu — gõ để tìm mẫu ở trên.';}sub+=fee;depTot+=dep;});
+ const disc=Number(document.getElementById('discount').value||0),surch=Number(document.getElementById('surcharge').value||0);
+ const total=sub-disc+surch;
+ document.getElementById('moneyBox').innerHTML='💰 Tiền tạm tính: tiền thuê '+fmt(sub)+' − giảm '+fmt(disc)+' + phụ thu '+fmt(surch)+' = <b>'+fmt(total)+'</b> · Cọc yêu cầu tổng '+fmt(depTot)+' · (tiền thuê và cọc tự tính theo bảng giá mẫu + số ngày, nhập tay giá/cọc riêng sẽ ghi đè dòng đó).';}
+function refreshAssetOptions(el){const pid=el.querySelector('.prod').value;const sel=el.querySelector('.asset');const cur=sel.value;const list=pid?ASSETS.filter(a=>a.product_id===pid):[];sel.innerHTML='<option value="">Tự chọn chiếc trống</option>'+list.map(a=>`<option value="${a.asset_id}">${a.asset_id} — ${a.availability_status}</option>`).join('');if(list.some(a=>a.asset_id===cur))sel.value=cur;}
+function removeLine(btn){btn.closest('.line').remove();updateMoney();}
+function renderProdList(el){const inp=el.querySelector('.prodSearch');const q=inp.value;const box=el.querySelector('.prodList');const pidEl=el.querySelector('.prod');if(pidEl.value){const pp=PRODS.find(x=>x.product_id===pidEl.value);if(!pp||inp.value!==pp.name+' ('+pp.product_id+')'){pidEl.value='';refreshAssetOptions(el);updateMoney();}}
+ if(!PRODS.length){box.innerHTML='<div class="px-3 py-3 text-sm text-stone-500">Đang tải danh sách mẫu...</div>';box.classList.remove('hidden');loadStock().then(()=>renderProdList(el)).catch(()=>{box.innerHTML='<div class="px-3 py-3 text-sm text-stone-500">Chưa tải được mẫu — thử tải lại trang.</div>';});return;}
+ const list=PRODS.filter(p=>prodMatches(p,q)).slice(0,20);box.innerHTML=list.length?list.map(p=>`<button type="button" class="w-full text-left px-3 py-3 border-b" onclick="pickProd(this,'${p.product_id}')"><b>${p.name}</b> (${p.product_id}) — ${fmt(p.rental_price_1d)} /ngày đầu · Cọc ${fmt(p.default_deposit)}${p.description?('<br><span class="text-xs text-stone-500">'+p.description+'</span>'):''}</button>`).join(''):'<div class="px-3 py-3 text-sm text-stone-500">Không tìm thấy mẫu (đã tìm cả trong ghi chú).</div>';box.classList.remove('hidden');}
+function pickProd(btn,pid){const el=btn.closest('.line');const p=PRODS.find(x=>x.product_id===pid);el.querySelector('.prod').value=pid;el.querySelector('.prodSearch').value=p?p.name+' ('+pid+')':pid;el.querySelector('.prodList').classList.add('hidden');refreshAssetOptions(el);updateMoney();}
+document.addEventListener('click',e=>{if(!e.target.closest('.prodWrap'))document.querySelectorAll('.prodList').forEach(b=>b.classList.add('hidden'));});
+function addLine(){const div=document.createElement('div');div.className='line border rounded-xl p-3 space-y-2 bg-white';
+ const days=rangeDays();
+ div.innerHTML=`<div class="relative prodWrap"><input class="prodSearch border rounded-lg px-3 py-3 w-full min-w-0" placeholder="🔍 Gõ tên, mã hoặc ghi chú mẫu... (VD: áo dài, AD001, voan)" oninput="renderProdList(this.closest('.line'))" onfocus="renderProdList(this.closest('.line'))"><input type="hidden" class="prod"><div class="prodList hidden bg-white border rounded-xl shadow max-h-64 overflow-y-auto mt-1"></div></div>
+ <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+ <select class="asset border rounded-lg px-3 py-2.5 min-w-0 w-full truncate" onchange="updateMoney()"><option value="">Chọn mẫu trước để thấy chiếc</option></select>
+ <label class="text-xs block min-w-0">Số ngày<input type="number" class="days border rounded-lg px-3 py-2.5 w-full min-w-0 mt-1" value="${days}" min="1" oninput="updateMoney()"></label>
+ <label class="text-xs block min-w-0">Giá thuê riêng<input type="number" class="fee border rounded-lg px-3 py-2.5 w-full min-w-0 mt-1" placeholder="Để trống = bảng giá" oninput="updateMoney()"></label>
+ <label class="text-xs block min-w-0">Cọc riêng<input type="number" class="dep border rounded-lg px-3 py-2.5 w-full min-w-0 mt-1" placeholder="Để trống = mặc định" oninput="updateMoney()"></label>
+ </div><div class="lineMoney text-sm font-semibold text-green-800"></div><div class="flex justify-end"><button type="button" onclick="removeLine(this)" class="border px-3 py-2 rounded-lg text-sm">🗑️ Xoá dòng này</button></div>`;
+ document.getElementById('lines').appendChild(div);updateMoney();}
+function rangeDays(){const p=document.getElementById('pickup').value, r=document.getElementById('returnAt').value;if(!p||!r)return 1;const d=Math.ceil((new Date(r)-new Date(p))/86400000);return Math.max(1,d);}
+function updateRangeLabel(){const p=document.getElementById('pickup').value, r=document.getElementById('returnAt').value;if(!p||!r)return;const fmtD=s=>{const d=new Date(s);return d.getDate()+'/'+(d.getMonth()+1)+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');};document.getElementById('rangeLabel').textContent='Khoảng thuê: '+fmtD(p)+' → '+fmtD(r)+' = '+rangeDays()+' ngày (24h/ngày).';}
+function onRangeChange(){updateRangeLabel();const d=rangeDays();document.querySelectorAll('.line .days').forEach(el=>el.value=d);updateMoney();}
+function setRangeDays(n){const p=document.getElementById('pickup').value;if(!p)return;const d=new Date(new Date(p).getTime()+n*86400000);const pad=x=>String(x).padStart(2,'0');document.getElementById('returnAt').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+pad(d.getHours())+':'+pad(d.getMinutes());onRangeChange();}
+let DR_START=null, DR_END=null, DR_CURSOR=new Date();
+function openDateModal(){const p=document.getElementById('pickup').value;if(p)DR_CURSOR=new Date(p);DR_START=null;DR_END=null;renderDateCal();document.getElementById('dateModal').classList.remove('hidden');}
+function closeDateModal(){document.getElementById('dateModal').classList.add('hidden');}
+function dateNav(dir){DR_CURSOR=new Date(DR_CURSOR.getFullYear(),DR_CURSOR.getMonth()+dir,1);renderDateCal();}
+function renderDateCal(){const y=DR_CURSOR.getFullYear(),m=DR_CURSOR.getMonth();document.getElementById('dateMonthLabel').textContent=(m+1)+'/'+y;const first=new Date(y,m,1),daysIn=new Date(y,m+1,0).getDate();let html='';for(let i=0;i<first.getDay();i++)html+='<div></div>';for(let d=1;d<=daysIn;d++){const day=new Date(y,m,d);const t=day.getTime();const isS=DR_START&&t===DR_START.getTime();const isE=DR_END&&t===DR_END.getTime();const inR=DR_START&&DR_END&&t>DR_START.getTime()&&t<DR_END.getTime();html+=`<button onclick="pickDateDay(${y},${m},${d})" class="border rounded-lg py-3 ${isS||isE?'bg-orange-600 text-white font-bold':inR?'bg-orange-100':''}">${d}</button>`;}document.getElementById('dateCalGrid').innerHTML=html;document.getElementById('datePicked').textContent=DR_START?('Đã chọn: '+(DR_START.getDate()+'/'+(DR_START.getMonth()+1))+(DR_END?(' → '+(DR_END.getDate()+'/'+(DR_END.getMonth()+1))):' (chạm thêm 1 ngày làm ngày trả)')):'Chưa chọn ngày.';}
+function pickDateDay(y,m,d){const day=new Date(y,m,d);if(!DR_START||(DR_START&&DR_END)){DR_START=day;DR_END=null;}else if(day<DR_START){DR_START=day;}else{DR_END=day;}renderDateCal();}
+function applyDateRange(){if(!DR_START)return;const pad=x=>String(x).padStart(2,'0');const timeOf=s=>{const dd=new Date(s);return isNaN(dd)?'09:00':pad(dd.getHours())+':'+pad(dd.getMinutes());};const t=timeOf(document.getElementById('pickup').value);const ds=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+t;document.getElementById('pickup').value=ds(DR_START);document.getElementById('returnAt').value=ds(DR_END||new Date(DR_START.getTime()+86400000));closeDateModal();onRangeChange();}
+let EDIT_ORDER_ID='';
+function cancelEdit(){EDIT_ORDER_ID='';document.getElementById('editBanner').classList.add('hidden');document.getElementById('saveOrderBtn').textContent='Tạo đơn';document.getElementById('orderMsg').textContent='';}
+async function editOrder(orderId){
+  const o=ORDERS.find(x=>x.order_id===orderId);if(!o)return alert('Không tìm thấy đơn.');
+  if(o.status==='Hoàn tất'||o.status==='Đã hủy')return alert('Đơn đã hoàn tất / đã hủy thì không sửa nữa, để giữ lịch sử.');
+  try{
+    const [lines,custs]=await Promise.all([api('orderLines',{order_id:orderId}),api('customers',{})]);
+    const c=custs.find(x=>x.customer_id===o.customer_id)||{};
+    document.getElementById('cName').value=c.full_name||'';document.getElementById('cPhone').value=c.phone||'';document.getElementById('cAddr').value=c.address||'';
+    document.getElementById('pickup').value=String(o.pickup_at||'').replace(' ','T').slice(0,16);
+    document.getElementById('discount').value=o.discount_amount||'';document.getElementById('surcharge').value=o.surcharge_amount||'';document.getElementById('oNotes').value=o.notes||'';
+    document.getElementById('lines').innerHTML='';
+    lines.forEach(l=>{addLine();const el=document.querySelectorAll('.line')[document.querySelectorAll('.line').length-1];const pp=PRODS.find(x=>x.product_id===l.product_id);el.querySelector('.prod').value=l.product_id;el.querySelector('.prodSearch').value=pp?pp.name+' ('+l.product_id+')':l.product_id;refreshAssetOptions(el);el.querySelector('.asset').value=l.asset_id||'';el.querySelector('.days').value=l.rental_days;el.querySelector('.fee').value=l.rental_fee||'';el.querySelector('.dep').value=l.deposit_required||'';});updateMoney();
+    if(!lines.length)addLine();
+    EDIT_ORDER_ID=orderId;document.getElementById('editOrderLabel').textContent=orderId;document.getElementById('editBanner').classList.remove('hidden');document.getElementById('saveOrderBtn').textContent='Lưu sửa đơn';
+    showTab('order');window.scrollTo({top:0,behavior:'smooth'});
+  }catch(e){alert(e.message);}
+}
+async function createOrder(){const lines=[...document.querySelectorAll('.line')].map(el=>({product_id:el.querySelector('.prod').value,asset_id:el.querySelector('.asset').value,rental_days:el.querySelector('.days').value,rental_fee_override:el.querySelector('.fee').value||undefined,deposit_required:el.querySelector('.dep').value||undefined}));
+ try{
+  const payload={customer:{full_name:document.getElementById('cName').value,phone:document.getElementById('cPhone').value,address:document.getElementById('cAddr').value},pickup_at:document.getElementById('pickup').value,discount_amount:document.getElementById('discount').value,surcharge_amount:document.getElementById('surcharge').value,notes:document.getElementById('oNotes').value,lines};
+  if(EDIT_ORDER_ID){const r=await api('updateOrder',{order_id:EDIT_ORDER_ID,...payload});document.getElementById('orderMsg').textContent='✅ Đã sửa '+r.order_id+' — tiền thuê '+fmt(r.rental_subtotal)+', cọc yêu cầu '+fmt(r.deposit_required);cancelEdit();}
+  else{const r=await api('createOrder',payload);document.getElementById('orderMsg').textContent='✅ Đã tạo '+r.order_id+' — tiền thuê '+fmt(r.rental_subtotal)+', cọc yêu cầu '+fmt(r.deposit_required);}
+  loadOrders();loadCalendar();}catch(e){document.getElementById('orderMsg').textContent='❌ '+e.message;}}
+function statusPill(s){const m={'Đã tạo đơn':'bg-stone-100 text-stone-700','Đã cọc':'bg-blue-100 text-blue-700','Đã giao khách':'bg-orange-100 text-orange-700','Hết thời gian thuê':'bg-red-100 text-red-700','Khách đã trả':'bg-purple-100 text-purple-700','Hoàn tất':'bg-green-100 text-green-700','Đã hủy':'bg-stone-200 text-stone-500'};const label={'Hoàn tất':'Xong'};return `<span class="px-2 py-1 rounded-full text-xs font-bold ${m[s]||'bg-stone-100'}">${label[s]||s}</span>`;}
+function orderDue(o){return Number(o.rental_subtotal||0)-Number(o.discount_amount||0)+Number(o.surcharge_amount||0)+Number(o.late_fee_amount||0)+Number(o.damage_fee||0)-Number(o.rental_paid||0)-Number(o.deposit_deducted||0);}
+function orderDepLeft(o){return Number(o.deposit_received||0)-Number(o.deposit_refunded||0)-Number(o.deposit_deducted||0);}
+function orderDays(o){if(!o.pickup_at||!o.due_at)return 0;return Math.max(1,Math.ceil((new Date(o.due_at)-new Date(o.pickup_at))/86400000));}
+function shortDate(s){if(!s)return '—';const d=new Date(s);return d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear();}
+function initials(name){const w=String(name||'?').trim().split(/\s+/);return (w.length>1?(w[w.length-2][0]+w[w.length-1][0]):w[0][0]||'?').toUpperCase();}
+function pagBar(page,totalPages,total,unit,setter){if(totalPages<=1)return `<p class="text-sm text-stone-500 text-center">Hiển thị từ ${total?1:0} tới ${total} trong tổng số ${total} ${unit}.</p>`;let pages=[1];for(let p=Math.max(2,page-1);p<=Math.min(totalPages-1,page+1);p++)pages.push(p);if(totalPages>1)pages.push(totalPages);pages=[...new Set(pages)].sort((a,b)=>a-b);let html='';let prev=0;pages.forEach(p=>{if(prev&&p-prev>1)html+='<span class="px-2 text-stone-400">...</span>';html+=`<button onclick="${setter}(${p})" class="px-3 py-2 rounded-lg border font-bold ${p===page?'bg-orange-600 text-white':'bg-white'}">${p}</button>`;prev=p;});const from=(page-1)*8+1,to=Math.min(page*8,total);return `<div class="text-center"><p class="text-sm text-stone-500 mb-2">Hiển thị từ ${from} tới ${to} trong tổng số ${total} ${unit}</p><div class="flex flex-wrap justify-center gap-1"><button onclick="${setter}(${Math.max(1,page-1)})" class="px-3 py-2 rounded-lg border">‹</button>${html}<button onclick="${setter}(${Math.min(totalPages,page+1)})" class="px-3 py-2 rounded-lg border">›</button></div></div>`;}
+function setCustPage(n){CUST_PAGE=n;renderCusts();}
+function setOrderPage(n){ORDER_PAGE=n;renderOrders();}
+function setOrderFilter(f){ORDER_STATUS_FILTER=f;ORDER_PAGE=1;['all','pending','renting','overdue','done'].forEach(k=>{const el=document.getElementById('chip-'+k);if(el)el.className='border px-3 py-2 rounded-full font-semibold '+(k===f?'bg-orange-600 text-white':'');});renderOrders();}
+function viewCustomerOrders(cid){const c=CUSTS.find(x=>x.customer_id===cid);ORDER_CUST_FILTER=cid;ORDER_PAGE=1;document.getElementById('orderCustChip').classList.remove('hidden');document.getElementById('orderCustChipText').textContent='Đang xem đơn của '+(c?c.full_name:cid);showTab('order');}
+function clearCustFilter(){ORDER_CUST_FILTER='';document.getElementById('orderCustChip').classList.add('hidden');renderOrders();}
+function goOverdue(){setOrderFilter('overdue');showTab('order');}
+function updateOverdueBadge(){const n=ORDERS.filter(o=>o.status==='Hết thời gian thuê').length;const b=document.getElementById('overdueBadge');if(b){b.textContent=n;b.classList.toggle('hidden',n===0);}}
+async function loadOrders(){try{const [os,cs,ls]=await Promise.all([api('orders',{}),api('customers',{}),api('allLines',{})]);ORDERS=os;CUSTS=cs;LINES=ls;}catch(e){ORDERS=await api('orders',{});}updateOverdueBadge();renderOrders();}
+function renderOrders(){const q=norm(document.getElementById('searchOrder')?document.getElementById('searchOrder').value:'');
+ let rows=ORDERS.filter(o=>{if(ORDER_CUST_FILTER&&o.customer_id!==ORDER_CUST_FILTER)return false;if(ORDER_STATUS_FILTER==='pending'&&['Đã tạo đơn','Đã cọc'].indexOf(o.status)<0)return false;if(ORDER_STATUS_FILTER==='renting'&&o.status!=='Đã giao khách')return false;if(ORDER_STATUS_FILTER==='overdue'&&o.status!=='Hết thời gian thuê')return false;if(ORDER_STATUS_FILTER==='done'&&['Khách đã trả','Hoàn tất'].indexOf(o.status)<0)return false;if(!q)return true;const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};const lineTxt=LINES.filter(l=>l.order_id===o.order_id).map(l=>l.product_id+' '+l.asset_id).join(' ');return norm(o.order_id+' '+o.customer_id+' '+c.full_name+' '+c.phone+' '+lineTxt).includes(q);});
+ const total=rows.length,totalPages=Math.max(1,Math.ceil(total/8));if(ORDER_PAGE>totalPages)ORDER_PAGE=totalPages;const pageRows=rows.slice((ORDER_PAGE-1)*8,ORDER_PAGE*8);
+ document.getElementById('orderCards').innerHTML=pageRows.map(o=>{const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};const lines=LINES.filter(l=>l.order_id===o.order_id);const due=orderDue(o),depLeft=orderDepLeft(o);const moneyPill=(due<=0&&depLeft===0)?'<span class="px-2 py-1 rounded-lg bg-green-100 text-green-700 text-xs font-bold">✓ Đủ tiền</span>':`<span class="px-2 py-1 rounded-lg bg-amber-100 text-amber-800 text-xs font-bold">Còn thu ${fmt(Math.max(0,due))}${depLeft>0?(' · Cọc giữ '+fmt(depLeft)):''}</span>`;
+ return `<div class="bg-white rounded-2xl p-4 shadow space-y-3">
+ <div class="flex flex-wrap gap-2 items-center justify-between"><span class="bg-orange-50 text-orange-700 font-bold px-2 py-1 rounded-lg text-sm">${o.order_id}</span>${statusPill(o.status)}</div>
+ <div class="flex items-center gap-2"><div class="w-9 h-9 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center font-bold">${initials(c.full_name)}</div><div><div class="font-bold">${c.full_name||o.customer_id}</div><a href="tel:${c.phone||''}" class="text-sm text-stone-600">📞 ${c.phone||''}</a></div></div>
+ <div><div class="text-xs font-semibold text-stone-500 mb-1">ĐỒ THUÊ:</div><div class="flex flex-wrap gap-1">${lines.length?lines.map(l=>{const p=PRODS.find(x=>x.product_id===l.product_id);return `<span class="bg-orange-50 text-orange-700 px-2 py-1 rounded-full text-xs font-semibold">👗 ${p?p.name:l.product_id} (${l.asset_id})</span>`;}).join(''):'<span class="text-sm text-stone-500">—</span>'}</div></div>
+ <div class="bg-stone-50 rounded-xl p-3 text-sm"><div>📅 ${shortDate(o.pickup_at)} đến ${shortDate(o.due_at)}</div><div class="flex justify-between"><span class="text-stone-500">Thời hạn thuê:</span><b>${orderDays(o)} ngày</b></div></div>
+ <div class="bg-stone-50 rounded-xl p-3 text-sm space-y-1"><div class="flex justify-between"><span>Tổng tiền thuê:</span><b>${fmt(Number(o.rental_subtotal||0)-Number(o.discount_amount||0)+Number(o.surcharge_amount||0)+Number(o.late_fee_amount||0)+Number(o.damage_fee||0))}</b></div><div class="flex justify-between"><span>Đã thu thuê / cọc:</span><span>${fmt(o.rental_paid)} / ${fmt(o.deposit_received)}</span></div><div>${moneyPill}</div></div>
+ ${o.notes?`<div class="text-sm bg-amber-50 rounded-lg px-3 py-2">📝 ${String(o.notes).split('\n').slice(-1)[0]}</div>`:''}
+ <button onclick="openOrderDetail('${o.order_id}')" class="w-full border border-orange-200 text-orange-600 font-bold py-3 rounded-xl">Xem chi tiết &amp; Xử lý</button>
+ <div class="flex gap-2"><button onclick="editOrder('${o.order_id}')" class="flex-1 border px-3 py-2.5 rounded-lg font-semibold">✏️ Sửa</button><button onclick="doStatus('${o.order_id}','Đã giao khách')" class="flex-1 border px-3 py-2.5 rounded-lg font-semibold">Giao</button><button onclick="doComplete('${o.order_id}')" class="flex-1 border px-3 py-2.5 rounded-lg font-semibold">Hoàn tất</button><button onclick="askCancelOrder('${o.order_id}')" class="border px-3 py-2.5 rounded-lg" title="Hủy đơn (chỉ đơn mới tạo / đã cọc)">🗑️</button></div>
+ </div>`;}).join('')||'<p class="text-sm text-stone-500 col-span-2">Không có đơn nào khớp.</p>';
+ document.getElementById('orderPag').innerHTML=pagBar(ORDER_PAGE,totalPages,total,'hợp đồng','setOrderPage');}
+function askCancelOrder(id){const o=ORDERS.find(x=>x.order_id===id);if(!o)return;if(['Đã tạo đơn','Đã cọc'].indexOf(o.status)<0)return alert('Chỉ hủy được đơn mới tạo hoặc đã cọc.');document.getElementById('confirmText').textContent='Hủy đơn '+id+'? Đơn hủy vẫn giữ lại trong lịch sử, không xóa.';CONFIRM_CB=async()=>{try{await api('updateStatus',{order_id:id,status:'Đã hủy'});closeConfirmModal();loadOrders();}catch(e){alert(e.message);}};document.getElementById('confirmModal').classList.remove('hidden');}
+let OD_LINES=[];
+async function openOrderDetail(id){OD_ID=id;const o=ORDERS.find(x=>x.order_id===id);if(!o){loadOrders().then(()=>openOrderDetail(id));return;}const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};try{OD_LINES=await api('orderLines',{order_id:id});}catch(e){OD_LINES=LINES.filter(l=>l.order_id===id);}
+ const due=orderDue(o),depLeft=orderDepLeft(o);
+ document.getElementById('odTitle').textContent='Đơn '+id+' — '+(c.full_name||o.customer_id);
+ document.getElementById('odBody').innerHTML=`<div class="flex gap-2 items-center">${statusPill(o.status)} <span>📅 ${shortDate(o.pickup_at)} → ${shortDate(o.due_at)} (${orderDays(o)} ngày)</span></div>
+ <div>👤 ${c.full_name||''} · 📞 ${c.phone||''} · ${c.address||''}</div>
+ <div>${OD_LINES.map(l=>{const p=PRODS.find(x=>x.product_id===l.product_id);return `<div class="bg-stone-50 rounded-lg px-3 py-2">👗 ${p?p.name:l.product_id} (${l.asset_id}) — ${l.rental_days} ngày — thuê ${fmt(l.rental_fee)} — cọc ${fmt(l.deposit_required)}</div>`;}).join('')||'—'}</div>
+ <div class="bg-green-50 rounded-xl p-3 font-semibold">Tổng phải thu: ${fmt(Number(o.rental_subtotal||0)-Number(o.discount_amount||0)+Number(o.surcharge_amount||0)+Number(o.late_fee_amount||0)+Number(o.damage_fee||0))} · Đã thu thuê: ${fmt(o.rental_paid)} · Cọc nhận: ${fmt(o.deposit_received)} · Cọc còn giữ: ${fmt(depLeft)} · <span class="${due<=0&&depLeft===0?'text-green-700':'text-amber-700'}">${due<=0&&depLeft===0?'✓ Đủ tiền':'Còn thu '+fmt(Math.max(0,due))}</span></div>
+ ${o.notes?`<div class="bg-amber-50 rounded-lg px-3 py-2 whitespace-pre-line">📝 Ghi chú:\n${o.notes}</div>`:''}
+ <div class="flex gap-2"><button onclick="closeOrderDetail();editOrder('${id}')" class="flex-1 border font-bold py-3 rounded-xl">✏️ Sửa đơn</button><button onclick="doStatus('${id}','Đã giao khách');closeOrderDetail()" class="flex-1 border font-bold py-3 rounded-xl">Giao</button><button onclick="doComplete('${id}');closeOrderDetail()" class="flex-1 border font-bold py-3 rounded-xl">Hoàn tất</button></div>`;
+ document.getElementById('orderDetailModal').classList.remove('hidden');}
+function closeOrderDetail(){document.getElementById('orderDetailModal').classList.add('hidden');OD_ID='';}
+async function detailNote(){const t=document.getElementById('odNote').value.trim();if(!t||!OD_ID)return;try{await api('addOrderNote',{order_id:OD_ID,note:t});document.getElementById('odNote').value='';await loadOrders();openOrderDetail(OD_ID);}catch(e){alert(e.message);}}
+async function detailPay(){try{await api('addPayment',{order_id:OD_ID,type:document.getElementById('odPayType').value,amount:document.getElementById('odPayAmount').value,method:'Tiền mặt',notes:''});document.getElementById('odMsg').textContent='✅ Đã ghi giao dịch.';await loadOrders();openOrderDetail(OD_ID);}catch(e){document.getElementById('odMsg').textContent='❌ '+e.message;}}
+async function detailReturn(){try{const r=await api('returnOrder',{order_id:OD_ID,actual_return_at:document.getElementById('odRetAt').value,damage_fee:document.getElementById('odDamage').value,conditions:{}});document.getElementById('odMsg').textContent=`✅ Đã nhận lại. Trễ ${r.late_hours} giờ, phí trễ ${fmt(r.late_fee)}.`;await loadOrders();openOrderDetail(OD_ID);}catch(e){document.getElementById('odMsg').textContent='❌ '+e.message;}}
+async function doStatus(id,st){try{await api('updateStatus',{order_id:id,status:st});loadOrders();}catch(e){alert(e.message);}}
+async function doComplete(id){try{await api('completeOrder',{order_id:id});loadOrders();}catch(e){alert(e.message);}}
+let PAY_SEL='',RET_SEL='',PICK_LOADING=false;
+function pickRows(prefix){const q=norm(document.getElementById(prefix+'OrderSearch').value||'');const st=document.getElementById(prefix+'StatusFilter').value||'';return ORDERS.filter(o=>{if(st&&o.status!==st)return false;if(!q)return true;const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};const lt=LINES.filter(l=>l.order_id===o.order_id).map(l=>l.product_id+' '+l.asset_id).join(' ');return norm(o.order_id+' '+o.customer_id+' '+c.full_name+' '+c.phone+' '+lt).includes(q);}).slice(0,30);}
+function renderPick(prefix){const box=document.getElementById(prefix+'Pick');if(!box)return;
+ if(!ORDERS.length){box.innerHTML='<div class="px-3 py-3 text-sm text-stone-500">Đang tải đơn...</div>';if(!PICK_LOADING){PICK_LOADING=true;loadOrders().then(()=>{PICK_LOADING=false;renderPick(prefix);}).catch(()=>{PICK_LOADING=false;});}return;}
+ const list=pickRows(prefix);const sel=prefix==='pay'?PAY_SEL:RET_SEL;
+ box.innerHTML=list.length?list.map(o=>{const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};return `<div class="flex items-center gap-2 px-2 py-2 ${sel===o.order_id?'bg-orange-50':''}"><button type="button" onclick="pickOrder('${prefix}','${o.order_id}')" class="flex-1 text-left min-w-0"><b>🧾 ${o.order_id}</b> <span class="text-sm">${c.full_name||o.customer_id}</span> ${statusPill(o.status)}<span class="block text-xs text-stone-500 truncate">Thuê ${fmt(o.rental_subtotal)} · Đã thu ${fmt(o.rental_paid)} · Cọc giữ ${fmt(orderDepLeft(o))}</span></button><button type="button" title="Sửa thông tin đơn này" onclick="editOrder('${o.order_id}');window.scrollTo({top:0,behavior:'smooth'})" class="border px-3 py-2 rounded-lg shrink-0">✏️</button></div>`;}).join(''):'<div class="px-3 py-3 text-sm text-stone-500">Không có đơn nào khớp.</div>';}
+function renderPayPick(){renderPick('pay');}
+function renderRetPick(){renderPick('ret');}
+function pickOrder(prefix,id){const o=ORDERS.find(x=>x.order_id===id);if(!o)return;const c=CUSTS.find(x=>x.customer_id===o.customer_id)||{};if(prefix==='pay'){PAY_SEL=id;document.getElementById('payOrder').value=id;document.getElementById('paySelected').textContent='✅ Đã chọn đơn '+id+' — '+(c.full_name||o.customer_id)+' ('+o.status+')';}else{RET_SEL=id;document.getElementById('retOrder').value=id;document.getElementById('retSelected').textContent='✅ Đã chọn đơn '+id+' — '+(c.full_name||o.customer_id)+' ('+o.status+')';}renderPick(prefix);}
+async function addPayment(){try{const oid=document.getElementById('payOrder').value;if(!oid){document.getElementById('payMsg').textContent='❌ Chưa chọn đơn — bấm 1 đơn trong danh sách phía trên.';return;}await api('addPayment',{order_id:oid,type:document.getElementById('payType').value,amount:document.getElementById('payAmount').value,method:document.getElementById('payMethod').value,notes:document.getElementById('payNote').value});document.getElementById('payMsg').textContent='✅ Đã ghi giao dịch.';loadOrders().then(()=>{renderPayPick();renderRetPick();}).catch(()=>{});}catch(e){document.getElementById('payMsg').textContent='❌ '+e.message;}}
+async function returnOrder(){try{const oid=document.getElementById('retOrder').value;if(!oid){document.getElementById('retMsg').textContent='❌ Chưa chọn đơn — bấm 1 đơn trong danh sách phía trên.';return;}const r=await api('returnOrder',{order_id:oid,actual_return_at:document.getElementById('retAt').value,damage_fee:document.getElementById('damage').value,conditions:{}});document.getElementById('retMsg').textContent=`✅ Đã nhận lại. Trễ ${r.late_hours} giờ, phí trễ ${fmt(r.late_fee)} (chưa thu — ghi giao dịch PHI_TRE hoặc khấu trừ cọc để thu).`;loadOrders().then(()=>{renderPayPick();renderRetPick();}).catch(()=>{});}catch(e){document.getElementById('retMsg').textContent='❌ '+e.message;}}
+function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();}
+function prodMatches(p,q){if(!q)return true;const qq=norm(q);return norm(p.name+' '+p.product_id+' '+(p.description||'')).includes(qq);}
+function prodImgUrl(p){if(!p)return '';if(p.image_url)return p.image_url;if(p.image_file_id)return 'https://drive.google.com/thumbnail?id='+p.image_file_id+'&sz=w400';return '';}
+function prodThumb(p,size){const s=size||48;const u=prodImgUrl(p);if(!u)return `<span class="inline-flex items-center justify-center bg-orange-50 rounded-lg shrink-0" style="width:${s}px;height:${s}px">👗</span>`;return `<span class="relative inline-flex items-center justify-center bg-orange-50 rounded-lg overflow-hidden shrink-0" style="width:${s}px;height:${s}px"><span>👗</span><img src="${u}" loading="lazy" alt="" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()"></span>`;}
+async function loadStock(){PRODS=await api('products',{});ASSETS=await api('assets',{});renderStock();}
+function renderStock(){const q=document.getElementById('prodSearch')?document.getElementById('prodSearch').value:'';const list=PRODS.filter(p=>prodMatches(p,q));
+ document.getElementById('prodTable').innerHTML='<table class="w-full text-sm"><tr class="text-left border-b"><th class="py-2">Mã</th><th>Tên</th><th>Ghi chú</th><th>Ảnh</th><th>Cost</th><th>Cọc</th><th>Giá 1–5 ngày</th><th></th></tr>'+list.map(p=>`<tr class="border-b"><td>${p.product_id}</td><td>${p.name}</td><td>${p.description||'—'}</td><td>${prodImgUrl(p)?`<a target="_blank" href="${p.image_file_id?('https://drive.google.com/file/d/'+p.image_file_id+'/view'):prodImgUrl(p)}" title="Bấm để xem ảnh lớn">${prodThumb(p,56)}</a>`:'—'}</td><td>${fmt(p.cost_price)}</td><td>${fmt(p.default_deposit)}</td><td>${[p.rental_price_1d,p.rental_price_2d,p.rental_price_3d,p.rental_price_4d,p.rental_price_5d].map(fmt).join(' / ')}</td><td class="whitespace-nowrap"><button title="Sửa mẫu này trong popup" class="border px-3 py-3 rounded" onclick="openModelModal('${p.product_id}')">✏️</button> <button title="Xoá mẫu này (chỉ khi chưa có chiếc và chưa có đơn)" class="border px-3 py-3 rounded" onclick="askDeleteProduct('${p.product_id}','${p.name}')">🗑️</button></td></tr>`).join('')+'</table>'+(list.length?'':'<p class="text-sm text-stone-500 py-2">Không tìm thấy mẫu nào khớp từ khoá (đã tìm cả trong ghi chú).</p>');
+ const aq=norm(document.getElementById('assetSearch')?document.getElementById('assetSearch').value:'');const alist=ASSETS.filter(a=>{if(!aq)return true;const pp=PRODS.find(x=>x.product_id===a.product_id);return norm(a.asset_id+' '+a.product_id+' '+(pp?pp.name:'')+' '+a.availability_status+' '+(a.condition||'')+' '+(a.notes||'')).includes(aq);});
+ document.getElementById('assetTable').innerHTML='<table class="w-full text-sm"><tr class="text-left border-b"><th class="py-2">Chiếc</th><th>Mẫu</th><th>Tình trạng kho</th><th>Giá mua</th><th></th></tr>'+alist.map(a=>{const pp=PRODS.find(x=>x.product_id===a.product_id);return `<tr class="border-b"><td>${a.asset_id}</td><td>${pp?pp.name+' ('+a.product_id+')':a.product_id}</td><td>${a.availability_status}</td><td>${fmt(a.purchase_cost)}</td><td class="whitespace-nowrap"><button title="Sửa chiếc này trong popup" class="border px-3 py-3 rounded" onclick="openAssetModal('${a.asset_id}')">✏️</button> <button title="Xoá chiếc này (chỉ khi chưa có đơn thuê)" class="border px-3 py-3 rounded" onclick="askDeleteAsset('${a.asset_id}')">🗑️</button></td></tr>`;}).join('')+'</table>'+(alist.length?'':'<p class="text-sm text-stone-500 py-2">Không tìm thấy chiếc nào khớp từ khoá (thử mã chiếc, mã mẫu hoặc tên mẫu).</p>');}
+function renderAssetProdOptions(){const q=norm(document.getElementById('amProdSearch')?document.getElementById('amProdSearch').value:'');const cur=document.getElementById('amProd').value;let list=PRODS.filter(p=>!q||norm(p.name+' '+p.product_id+' '+(p.description||'')).includes(q));if(cur&&!list.some(p=>p.product_id===cur)){const cp=PRODS.find(p=>p.product_id===cur);if(cp)list=[cp].concat(list);}document.getElementById('amProd').innerHTML=list.map(p=>`<option value="${p.product_id}">${p.name} (${p.product_id})</option>`).join('');if(cur)document.getElementById('amProd').value=cur;}
+function filterAssetProd(){renderAssetProdOptions();}
+function openModelModal(id){const p=id?PRODS.find(x=>x.product_id===id):null;document.getElementById('modelModalTitle').textContent=p?'Sửa mẫu: '+p.name:'Thêm mẫu mới';document.getElementById('mRow').value=p?p._row:'';document.getElementById('mId').value=p?p.product_id:'';document.getElementById('mId').readOnly=!!p;document.getElementById('mName').value=p?p.name:'';document.getElementById('mDesc').value=p?(p.description||''):'';document.getElementById('mCost').value=p?p.cost_price:'';document.getElementById('mDep').value=p?p.default_deposit:'';document.getElementById('m1').value=p?p.rental_price_1d:'';document.getElementById('m2').value=p?p.rental_price_2d:'';document.getElementById('m3').value=p?p.rental_price_3d:'';document.getElementById('m4').value=p?p.rental_price_4d:'';document.getElementById('m5').value=p?p.rental_price_5d:'';document.getElementById('mStatus').value=p?p.status:'Đang cho thuê';document.getElementById('mPhoto').value='';document.getElementById('mPhotoPrev').innerHTML=(p&&prodImgUrl(p))?`<div class="text-xs text-stone-500 mb-1">Ảnh hiện tại:</div>${prodThumb(p,96)}`:'';document.getElementById('modelModal').classList.remove('hidden');document.getElementById('mName').focus();}
+function closeModelModal(){document.getElementById('modelModal').classList.add('hidden');}
+async function saveModelModal(){try{const row=document.getElementById('mRow').value;const payload={product_id:document.getElementById('mId').value,name:document.getElementById('mName').value,description:document.getElementById('mDesc').value,cost_price:document.getElementById('mCost').value,default_deposit:document.getElementById('mDep').value,rental_price_1d:document.getElementById('m1').value,rental_price_2d:document.getElementById('m2').value,rental_price_3d:document.getElementById('m3').value,rental_price_4d:document.getElementById('m4').value,rental_price_5d:document.getElementById('m5').value,status:document.getElementById('mStatus').value};if(row)payload._row=Number(row);const res=await api('saveProduct',payload);
+ const file=document.getElementById('mPhoto').files[0];
+ if(file){const b64=await new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result.split(',')[1]);rd.readAsDataURL(file);});await api('upload',{entity_type:'SanPham',entity_id:res.product_id,file_name:file.name,base64:b64});}
+ document.getElementById('prodMsg').textContent='✅ Đã lưu mẫu '+res.product_id;closeModelModal();loadStock();}catch(e){alert(e.message);}}
+function openAssetModal(id){const a=id?ASSETS.find(x=>x.asset_id===id):null;document.getElementById('assetModalTitle').textContent=a?'Sửa chiếc: '+a.asset_id:'Thêm chiếc mới';document.getElementById('amRow').value=a?a._row:'';document.getElementById('amId').value=a?a.asset_id:'';document.getElementById('amId').readOnly=!!a;document.getElementById('amProdSearch').value='';renderAssetProdOptions();if(a)document.getElementById('amProd').value=a.product_id;document.getElementById('amCost').value=a?a.purchase_cost:'';document.getElementById('amStatus').value=a?a.availability_status:'Sẵn sàng';document.getElementById('assetModal').classList.remove('hidden');}
+function closeAssetModal(){document.getElementById('assetModal').classList.add('hidden');}
+async function saveAssetModal(){try{const row=document.getElementById('amRow').value;const payload={asset_id:document.getElementById('amId').value,product_id:document.getElementById('amProd').value,purchase_cost:document.getElementById('amCost').value,availability_status:document.getElementById('amStatus').value};if(row)payload._row=Number(row);await api('saveAsset',payload);closeAssetModal();loadStock();}catch(e){alert(e.message);}}
+let CONFIRM_CB=null;
+function askDeleteProduct(id,name){document.getElementById('confirmText').textContent='Xoá mẫu “'+name+'” ('+id+')? Chỉ xoá được khi mẫu chưa có chiếc và chưa có đơn thuê. Hành động này không khôi phục được.';CONFIRM_CB=async()=>{try{await api('deleteProduct',{product_id:id});closeConfirmModal();loadStock();}catch(e){alert(e.message);}};document.getElementById('confirmModal').classList.remove('hidden');}
+function askDeleteAsset(id){document.getElementById('confirmText').textContent='Xoá chiếc “'+id+'”? Chỉ xoá được khi chiếc chưa có đơn thuê. Hành động này không khôi phục được.';CONFIRM_CB=async()=>{try{await api('deleteAsset',{asset_id:id});closeConfirmModal();loadStock();}catch(e){alert(e.message);}};document.getElementById('confirmModal').classList.remove('hidden');}
+function closeConfirmModal(){document.getElementById('confirmModal').classList.add('hidden');CONFIRM_CB=null;}
+document.addEventListener('click',e=>{if(e.target&&e.target.id==='confirmYes'&&CONFIRM_CB)CONFIRM_CB();});
+async function loadTimeline(){const d=await api('timeline',{start:document.getElementById('tlStart').value||new Date().toISOString().slice(0,10),days:document.getElementById('tlDays').value});
+ document.getElementById('timeline').innerHTML='<table class="text-xs"><tr><th class="text-left sticky left-0 bg-white">Chiếc</th>'+d.cols.map(c=>`<th class="px-1">${c}</th>`).join('')+'</tr>'+d.rows.map(r=>`<tr><td class="sticky left-0 bg-white font-semibold">${r.asset.asset_id}</td>`+r.cells.map(c=>`<td class="${c?'bg-amber-300':''} px-1" title="${c}"></td>`).join('')+'</tr>').join('')+'</table>';}
+async function loadCusts(){try{const [cs,os]=await Promise.all([api('customers',{}),api('orders',{})]);CUSTS=cs;if(!ORDERS.length)ORDERS=os;}catch(e){CUSTS=await api('customers',{});}renderCusts();}
+function renderCusts(){const q=norm(document.getElementById('custSearch')?document.getElementById('custSearch').value:'');
+ let list=CUSTS.filter(c=>!q||norm(c.full_name+' '+c.phone+' '+c.address+' '+(c.notes||'')).includes(q));
+ const total=list.length,totalPages=Math.max(1,Math.ceil(total/8));if(CUST_PAGE>totalPages)CUST_PAGE=totalPages;const page=list.slice((CUST_PAGE-1)*8,CUST_PAGE*8);
+ document.getElementById('custCards').innerHTML=page.map(c=>{const os=ORDERS.filter(o=>o.customer_id===c.customer_id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));const idx={};os.forEach((o,i)=>idx[o.order_id]=i+1);const recent=[...os].reverse().slice(0,2);const dueSum=os.reduce((s,o)=>s+Math.max(0,orderDue(o)),0);const depSum=os.reduce((s,o)=>s+orderDepLeft(o),0);const overdue=os.some(o=>o.status==='Hết thời gian thuê');const pill=overdue?'<span class="px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-bold">⏰ Có đơn quá hạn</span>':(dueSum<=0&&depSum===0?'<span class="px-2 py-1 rounded-full bg-green-100 text-green-700 text-xs font-bold">✓ Đủ tiền</span>':`<span class="px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">Còn thu ${fmt(dueSum)}${depSum>0?(' · Cọc giữ '+fmt(depSum)):''}</span>`);
+ return `<div class="bg-white rounded-2xl p-4 shadow space-y-3">
+ <div class="flex items-start justify-between"><div class="flex items-center gap-2"><div class="w-11 h-11 rounded-full bg-orange-100 text-orange-700 flex items-center justify-center font-bold text-lg">${initials(c.full_name)}</div><div><div class="font-bold">${c.full_name}</div><a href="tel:${c.phone}" class="text-sm text-stone-600">📞 ${c.phone}</a><div class="text-xs text-stone-500">${c.address||''}</div></div></div><span class="bg-orange-50 text-orange-700 px-2 py-1 rounded-lg text-xs font-bold whitespace-nowrap">${os.length} đơn</span></div>
+ <div>${pill} ${c.notes?`<span class="text-xs text-stone-500">· ${c.notes}</span>`:''}</div>
+ <div><div class="text-xs font-semibold text-stone-500 mb-1">ĐƠN THUÊ GẦN ĐÂY (${os.length})</div>${recent.length?recent.map(o=>`<div class="flex justify-between items-center bg-stone-50 rounded-lg px-3 py-2 mb-1"><span><b class="text-orange-600">${o.order_id}</b> <span class="text-sm">· Lần ${idx[o.order_id]}</span></span>${statusPill(o.status)}</div>`).join(''):'<div class="text-sm text-stone-500">Chưa có đơn nào.</div>'}</div>
+ <div class="flex gap-2"><button onclick="viewCustomerOrders('${c.customer_id}')" class="flex-1 bg-orange-50 text-orange-700 font-bold py-3 rounded-xl">👁 ${os.length} đơn</button><button onclick="openCustModal('${c.customer_id}')" class="flex-1 border font-bold py-3 rounded-xl">Sửa</button><button onclick="askDeleteCustomer('${c.customer_id}')" class="border px-3 py-3 rounded-xl" title="Xoá khách (chỉ khi chưa có đơn)">🗑️</button></div>
+ </div>`;}).join('')||'<p class="text-sm text-stone-500 col-span-2">Không tìm thấy khách nào.</p>';
+ document.getElementById('custPag').innerHTML=pagBar(CUST_PAGE,totalPages,total,'khách hàng','setCustPage');}
+function openCustModal(id){const c=CUSTS.find(x=>x.customer_id===id);if(!c)return;document.getElementById('cuId').value=c.customer_id;document.getElementById('cuName').value=c.full_name||'';document.getElementById('cuPhone').value=c.phone||'';document.getElementById('cuAddr').value=c.address||'';document.getElementById('cuNotes').value=c.notes||'';document.getElementById('custModal').classList.remove('hidden');}
+function closeCustModal(){document.getElementById('custModal').classList.add('hidden');}
+async function saveCustModal(){try{await api('updateCustomer',{customer_id:document.getElementById('cuId').value,full_name:document.getElementById('cuName').value,phone:document.getElementById('cuPhone').value,address:document.getElementById('cuAddr').value,notes:document.getElementById('cuNotes').value});closeCustModal();loadCusts();}catch(e){alert(e.message);}}
+function askDeleteCustomer(id){document.getElementById('confirmText').textContent='Xoá khách này? Chỉ xoá được khi khách chưa có đơn thuê.';CONFIRM_CB=async()=>{try{await api('deleteCustomer',{customer_id:id});closeConfirmModal();loadCusts();}catch(e){alert(e.message);}};document.getElementById('confirmModal').classList.remove('hidden');}
+async function loadExpenses(){try{EXPENSES=await api('expenses',{});}catch(e){EXPENSES=[];}const from=document.getElementById('expFrom').value,to=document.getElementById('expTo').value;const list=EXPENSES.filter(x=>{const d=String(x.occurred_at||'').slice(0,10);return (!from||d>=from)&&(!to||d<=to);}).sort((a,b)=>String(b.occurred_at).localeCompare(String(a.occurred_at)));const total=list.reduce((s,x)=>s+Number(x.amount||0),0);document.getElementById('expTotal').textContent='Tổng chi trong kỳ: '+fmt(total);document.getElementById('expTable').innerHTML='<table class="w-full text-sm"><tr class="text-left border-b"><th class="py-2">Ngày</th><th>Loại</th><th>Mẫu</th><th>Mô tả</th><th>Số tiền</th></tr>'+list.map(x=>`<tr class="border-b"><td>${String(x.occurred_at||'').slice(0,10)}</td><td>${x.category}</td><td>${x.product_id||'—'}</td><td>${x.description||''}</td><td class="font-bold">${fmt(x.amount)}</td></tr>`).join('')+'</table>'+(list.length?'':'<p class="text-sm text-stone-500 py-2">Chưa có khoản chi nào trong kỳ.</p>');}
+function openExpenseModal(){document.getElementById('exProd').innerHTML='<option value="">Không gắn mẫu</option>'+PRODS.map(p=>`<option value="${p.product_id}">${p.name} (${p.product_id})</option>`).join('');document.getElementById('expenseModal').classList.remove('hidden');}
+function closeExpenseModal(){document.getElementById('expenseModal').classList.add('hidden');}
+async function saveExpense(){try{await api('saveExpense',{category:document.getElementById('exCat').value,amount:document.getElementById('exAmount').value,occurred_at:document.getElementById('exDate').value,product_id:document.getElementById('exProd').value,description:document.getElementById('exDesc').value});closeExpenseModal();loadExpenses();}catch(e){alert(e.message);}}
+async function loadModels(){const ms=await api('modelStats',{});document.getElementById('modelTable').innerHTML='<table class="w-full text-sm"><tr class="text-left border-b"><th class="py-2">Mẫu</th><th>Chiếc (trống/đang thuê)</th><th>Lần thuê</th><th>Doanh thu</th><th>Lợi nhuận</th><th>Hồi vốn</th></tr>'+ms.map(m=>`<tr class="border-b"><td>${m.name}</td><td>${m.assetCount} (${m.available}/${m.renting})</td><td>${m.times}</td><td>${fmt(m.revenue)}</td><td>${fmt(m.profit)}</td><td><span class="px-2 py-1 rounded-full ${m.recovered?'bg-green-100':'bg-red-100'}">${m.recovered?'✅ Đã hồi vốn':Math.round(m.roi)+'% — còn '+fmt(m.remaining)}</span></td></tr>`).join('')+'</table>';}
+function setDateDefaults(){
+  const now=new Date();const pad=n=>String(n).padStart(2,'0');
+  const today=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate());
+  const nowLocal=today+'T'+pad(now.getHours())+':'+pad(now.getMinutes());
+  const set=(id,v)=>{const el=document.getElementById(id);if(el&&!el.value)el.value=v;};
+  set('pickup',nowLocal);set('retAt',nowLocal);set('tlStart',today);
+  const retEl=document.getElementById('returnAt');if(retEl&&!retEl.value){const tmr=new Date(now.getTime()+86400000);retEl.value=tmr.getFullYear()+'-'+pad(tmr.getMonth()+1)+'-'+pad(tmr.getDate())+'T'+pad(tmr.getHours())+':'+pad(tmr.getMinutes());}
+  updateRangeLabel();
+  set('fTo',today);set('fFrom',now.getFullYear()+'-'+pad(now.getMonth()+1)+'-01');
+}
+async function seedTest(){try{document.getElementById('seedMsg').textContent='⏳ Đang nạp dữ liệu mẫu...';const r=await api('seedTest',{});document.getElementById('seedMsg').textContent='✅ '+r.message;loadOrders();loadCalendar();loadStock();loadDash();}catch(e){document.getElementById('seedMsg').textContent='❌ '+e.message;}}
+async function seedDemo(){try{document.getElementById('demoMsg').textContent='⏳ Đang nạp demo...';const r=await api('seedDemo',{});document.getElementById('demoMsg').textContent='✅ '+r.message;loadStock();loadCusts();loadCalendar();}catch(e){document.getElementById('demoMsg').textContent='❌ '+e.message;}}
+async function loadAll(){try{setDateDefaults();PRODS=await api('products',{});ASSETS=await api('assets',{});addLine();loadDash();loadOrders();loadCalendar();}catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message;}}
+document.getElementById('userName').textContent='Chủ tiệm';document.getElementById('userEmail').textContent='Chế độ mở — không cần đăng nhập';const _s=document.getElementById('userEmailSide');if(_s)_s.textContent='Chế độ mở';const _t=document.getElementById('userEmailTop');if(_t)_t.textContent='Chế độ mở — chỉ chủ tiệm giữ link';loadAll();
+</script></body></html>
