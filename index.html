@@ -113,6 +113,7 @@ button:active{transform:scale(.97)}
 <li><b>Xem lịch từng mẫu/chiếc:</b> bấm vào thẻ mẫu, dòng chiếc trong tab Thiết bị/Mẫu, hoặc bấm mã chiếc ở bảng Gantt — popup hiện lịch thuê: đang trống hay bận đến ngày nào, kèm các đơn đã đặt (bấm vào đơn để bấm vào đơn để xem chi tiết.</li>
 <li><b>Giờ nhận/trả chính xác:</b> mọi nơi hiện ngày thuê đều kèm giờ (VD: 26/10/2026 10:00 → 27/10/2026 10:00) — giờ đến hạn là mốc tính giờ trễ khi trả đồ.</li>
 <li><b>Dùng như app trên iPhone:</b> mở trang bằng Safari → nút Chia sẻ → "Thêm vào Màn hình chính" — từ đó mở bằng icon ngoài màn hình chính, không còn khung Safari.</li>
+<li><b>Mở lại là thấy ngay:</b> dữ liệu đã lưu sẵn trong trình duyệt của máy này — mở app là hiện ngay dữ liệu lần trước, rồi app tải ngầm dữ liệu mới và tự điền vào. Xoá dữ liệu trình duyệt thì lần mở sau sẽ tải lại từ đầu.</li>
 <li><b>Đổi mẫu:</b> bấm nút ✕ ở cuối ô chọn mẫu để xoá mẫu đã chọn và chọn mẫu khác; ảnh mẫu hiện ngay trước tên mẫu trong danh sách, ảnh chiếc (ảnh của mẫu đó) hiện cạnh ô chọn chiếc.</li>
 <li><b>Bảng trên mobile:</b> bảng mẫu/chiếc hiện dạng thẻ có ảnh trên điện thoại, dạng bảng trên máy tính.</li>
 </ol>
@@ -369,11 +370,17 @@ button:active{transform:scale(.97)}
 </div></div>
 <script>
 let PRODS=[], ASSETS=[], ORDERS=[], CUSTS=[], LINES=[], EXPENSES=[];
-// CACHE client — chỉ trong bộ nhớ của trang (tải lại trang là hết, KHÔNG ghi localStorage để tránh dữ liệu cũ):
-// chuyển tab chỉ vẽ lại từ dữ liệu đã có, không gọi API. Chỉ tải lại khi: bấm 🔄 Làm mới, tải lại trang, hoặc sau khi sửa/xoá/thu tiền/trả đồ (lúc đó cache bị xoá).
+// CACHE client — stale-while-revalidate: dữ liệu đọc được lưu vào localStorage của trình duyệt,
+// lần sau mở lại hiện ngay dữ liệu đã lưu, rồi tải ngầm dữ liệu mới và vẽ lại (revalidateAll).
+// clearCache() chỉ xoá bộ nhớ trong trang (để sau sửa/xoá/thu tiền/trả đồ thì lấy mới),
+// KHÔNG xoá bản đã lưu — bản đó được ghi đè bằng dữ liệu mới mỗi lần tải xong.
 let CACHE={}, CACHE_TIME=0, INFLIGHT={}, CACHE_GEN=0;
+const CACHE_LS_KEY='ttd_cache_v1';
+function saveCache(){try{const str=JSON.stringify({v:1,time:CACHE_TIME,cache:CACHE});if(str.length<4000000)localStorage.setItem(CACHE_LS_KEY,str);}catch(e){}}
+function restoreCache(){try{const raw=localStorage.getItem(CACHE_LS_KEY);if(!raw||raw.length>4000000)return;const p=JSON.parse(raw);if(p&&p.v===1&&p.cache&&typeof p.cache==='object'){CACHE=p.cache;CACHE_TIME=p.time||0;updateCacheLabel();}}catch(e){}}
+restoreCache();
 function cacheKey(a,p){return a+'|'+JSON.stringify(p||{});}
-async function apiCached(a,p,opts){const k=cacheKey(a,p);if(Object.prototype.hasOwnProperty.call(CACHE,k))return CACHE[k];const g=CACHE_GEN;const infl=INFLIGHT[k];if(infl&&infl.g===g)return infl.pr;const pr=api(a,p,{...(opts||{}),silent:true}).then(d=>{if(CACHE_GEN===g){CACHE[k]=d;CACHE_TIME=Date.now();updateCacheLabel();}return d;}).finally(()=>{if(INFLIGHT[k]&&INFLIGHT[k].pr===pr)delete INFLIGHT[k];});INFLIGHT[k]={pr,g};return pr;}
+async function apiCached(a,p,opts){const k=cacheKey(a,p);const force=!!(opts&&opts.force);if(!force&&Object.prototype.hasOwnProperty.call(CACHE,k))return CACHE[k];const g=CACHE_GEN;const infl=INFLIGHT[k];if(infl&&infl.g===g)return infl.pr;const pr=api(a,p,{...(opts||{}),silent:true}).then(d=>{if(CACHE_GEN===g){CACHE[k]=d;CACHE_TIME=Date.now();updateCacheLabel();saveCache();}return d;}).finally(()=>{if(INFLIGHT[k]&&INFLIGHT[k].pr===pr)delete INFLIGHT[k];});INFLIGHT[k]={pr,g};return pr;}
 function clearCache(){CACHE={};CACHE_TIME=0;INFLIGHT={};CACHE_GEN++;updateCacheLabel();}
 function updateCacheLabel(){const el=document.getElementById('cacheLabel');if(el)el.textContent=CACHE_TIME?('Dữ liệu lúc '+new Date(CACHE_TIME).toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})):'Chưa tải dữ liệu';}
 // Loading: chỉ hiện spinner khi gọi mạng thật kéo dài trên 250ms (tránh nhấp nháy); lần đọc từ cache không hiện gì.
@@ -405,12 +412,12 @@ function calRange(){
   const y=CAL_CURSOR.getFullYear(),m=CAL_CURSOR.getMonth();const first=new Date(y,m,1);const daysIn=new Date(y,m+1,0).getDate();const days=[];for(let i=1;i<=daysIn;i++)days.push(new Date(y,m,i));return {start:first,days:days,label:(m+1)+'/'+y,first:first};}
 function setCalMode(mode){CAL_MODE=mode;document.getElementById('btnMonth').className='px-4 py-2 '+(mode==='month'?'bg-orange-50 text-orange-600':'');document.getElementById('btnWeek').className='px-4 py-2 '+(mode==='week'?'bg-orange-50 text-orange-600':'');loadCalendar();}
 function calNav(dir){if(CAL_MODE==='month'){CAL_CURSOR=new Date(CAL_CURSOR.getFullYear(),CAL_CURSOR.getMonth()+dir,1);}else{CAL_CURSOR=new Date(CAL_CURSOR.getTime()+dir*7*86400000);}loadCalendar();}
-async function loadCalendar(){
+async function loadCalendar(force){
   try{
     const r=calRange();document.getElementById('calMonthLabel').textContent=r.label;
     document.getElementById('calGrid').innerHTML='<div class="col-span-7 text-sm text-stone-500 py-4">⏳ Đang tải lịch…</div>';
     const startStr=r.start.toISOString().slice(0,10);
-    const d=await apiCached('timeline',{start:startStr,days:r.days.length});
+    const d=await apiCached('timeline',{start:startStr,days:r.days.length},force?{force:true}:undefined);
     CAL_DATA={range:r,data:d};
     // Gom theo ngày: mỗi ô timeline là 1 chiếc, cell chứa mã đơn — ô lịch hiện TÊN MẪU gọn (dễ đọc hơn mã chiếc) và cho chữ xuống dòng thay vì cắt "TE..."
     function shortModelName(n){return String(n||'').replace(/\s+TEST(-POPUP)?$/,'');}
@@ -443,7 +450,7 @@ function selectCalDay(i,scroll){
   document.querySelectorAll('#calGrid button').forEach((b,idx)=>{b.classList.toggle('ring-2',idx===i);b.classList.toggle('ring-orange-500',idx===i);});
 }
 function preset(k){const d=new Date();if(k==='month'){document.getElementById('fFrom').value=d.toISOString().slice(0,8)+'01';}else{document.getElementById('fFrom').value=d.getFullYear()+'-01-01';}document.getElementById('fTo').value=d.toISOString().slice(0,10);loadDash();}
-async function loadDash(){document.getElementById('stats').innerHTML='<div class="text-sm text-stone-500">⏳ Đang tải số liệu…</div>';try{const d=await apiCached('dashboard',{from:document.getElementById('fFrom').value,to:document.getElementById('fTo').value});
+async function loadDash(force){document.getElementById('stats').innerHTML='<div class="text-sm text-stone-500">⏳ Đang tải số liệu…</div>';try{const d=await apiCached('dashboard',{from:document.getElementById('fFrom').value,to:document.getElementById('fTo').value},force?{force:true}:undefined);
  const cards=[['Doanh thu thuê',d.doanhThuThue],['Thực thu',d.thucThu],['Cọc đang giữ',d.cocDangGiu],['Công nợ',d.congNo],['Phí trễ',d.phiTre],['Đang thuê / Quá hạn',d.rentingCount+' / '+d.overdueCount]];
  document.getElementById('stats').innerHTML=cards.map(c=>`<div class="bg-white rounded-2xl p-4 shadow"><div class="text-xs text-stone-500">${c[0]}</div><div class="text-xl font-bold">${typeof c[1]==='number'?fmt(c[1]):c[1]}</div></div>`).join('');
  document.getElementById('overdue').innerHTML=d.overdue.length?d.overdue.join(', '):'Không có đơn quá hạn.';
@@ -525,7 +532,7 @@ function viewCustomerOrders(cid){const c=CUSTS.find(x=>x.customer_id===cid);ORDE
 function clearCustFilter(){ORDER_CUST_FILTER='';document.getElementById('orderCustChip').classList.add('hidden');renderOrders();}
 function goOverdue(){setOrderFilter('overdue');showTab('allorders');}
 function updateOverdueBadge(){const n=ORDERS.filter(o=>o.status==='Hết thời gian thuê').length;const b=document.getElementById('overdueBadge');if(b){b.textContent=n;b.classList.toggle('hidden',n===0);}}
-async function fetchOrders(silent){const o=silent?{silent:true}:undefined;try{const [os,cs,ls]=await Promise.all([apiCached('orders',{},o),apiCached('customers',{},o),apiCached('allLines',{},o)]);ORDERS=os;CUSTS=cs;LINES=ls;}catch(e){ORDERS=await apiCached('orders',{},o);}updateOverdueBadge();}
+async function fetchOrders(silent,extra){const o={...(silent?{silent:true}:{}),...(extra||{})};try{const [os,cs,ls]=await Promise.all([apiCached('orders',{},o),apiCached('customers',{},o),apiCached('allLines',{},o)]);ORDERS=os;CUSTS=cs;LINES=ls;}catch(e){ORDERS=await apiCached('orders',{},o);}updateOverdueBadge();}
 async function loadOrders(){document.getElementById('orderCards').innerHTML='<p class="text-sm text-stone-500 py-2">⏳ Đang tải đơn…</p>';await fetchOrders();renderOrders();}
 async function preloadOrders(){try{await fetchOrders(true);ALLORDERS_LOADED=true;}catch(e){}}
 function renderOrders(){const q=norm(document.getElementById('searchOrder')?document.getElementById('searchOrder').value:'');
@@ -644,6 +651,7 @@ function setDateDefaults(){
 }
 async function seedTest(){try{document.getElementById('seedMsg').textContent='⏳ Đang nạp dữ liệu mẫu...';const r=await api('seedTest',{});document.getElementById('seedMsg').textContent='✅ '+r.message;clearCache();loadOrders();loadCalendar();loadStock();loadDash();}catch(e){document.getElementById('seedMsg').textContent='❌ '+e.message;}}
 async function seedDemo(){try{document.getElementById('demoMsg').textContent='⏳ Đang nạp demo...';const r=await api('seedDemo',{});document.getElementById('demoMsg').textContent='✅ '+r.message;clearCache();loadStock();loadCusts();loadCalendar();}catch(e){document.getElementById('demoMsg').textContent='❌ '+e.message;}}
-async function loadAll(){try{setDateDefaults();PRODS=await apiCached('products',{});ASSETS=await apiCached('assets',{});addLine();loadDash();clearCache();loadCalendar();preloadOrders();}catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message;}}
+async function revalidateAll(){try{const f={force:true};PRODS=await apiCached('products',{},f);ASSETS=await apiCached('assets',{},f);await fetchOrders(false,f);loadDash(true);loadCalendar(true);renderOrders();renderPayPick();renderRetPick();renderStock();}catch(e){}}
+async function loadAll(){try{setDateDefaults();PRODS=await apiCached('products',{});ASSETS=await apiCached('assets',{});addLine();loadDash();loadCalendar();preloadOrders();revalidateAll();}catch(e){document.getElementById('dashMsg').textContent='❌ '+e.message;}}
 document.getElementById('userName').textContent='Chủ tiệm';document.getElementById('userEmail').textContent='Chế độ mở — không cần đăng nhập';const _s=document.getElementById('userEmailSide');if(_s)_s.textContent='Chế độ mở';const _t=document.getElementById('userEmailTop');if(_t)_t.textContent='Chế độ mở — chỉ chủ tiệm giữ link';loadAll();
 </script></body></html>
