@@ -1,0 +1,28 @@
+{
+  "name": "Tiệm Thuê Đồ",
+  "short_name": "Thuê Đồ",
+  "description": "Quản lý thuê đồ váy áo: lịch thuê, đơn thuê, mẫu, khách hàng, doanh thu.",
+  "lang": "vi",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#fff7ed",
+  "theme_color": "#ea580c",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
